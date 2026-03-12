@@ -1,0 +1,124 @@
+[build-system]
+build-backend = "uv_build"
+requires = [ "uv-build>=0.9.3,<0.10" ]
+
+[project]
+name = "csb"
+version = "0.1.0"
+description = "Cloud-native pipeline for generating USDA Crop Sequence Boundaries from Cropland Data Layer rasters."
+readme = "README.md"
+license = { text = "Unlicense" }
+authors = [
+  { name = "Isaac Corley", email = "isaac.corley@proton.me" },
+]
+requires-python = ">=3.12"
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Science/Research",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "Topic :: Scientific/Engineering :: GIS",
+]
+
+dependencies = [
+  "click>=8",
+  "contourrs",
+  "duckdb>=1",
+  "exactextract",
+  "numpy",
+  "pyarrow",
+  "pyyaml",
+  "rasterio",
+  "rich",
+  "rioxarray",
+  "rusterize",
+  "shapely>=2",
+  "xarray",
+]
+
+[project.scripts]
+csb = "csb.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/isaaccorley/crop-sequence-boundaries-v2"
+Repository = "https://github.com/isaaccorley/crop-sequence-boundaries-v2"
+
+[dependency-groups]
+dev = [
+  "geopandas",
+  "pre-commit>=4.3",
+  "pytest>=8.4.2",
+  "pytest-cov>=7",
+  "ruff>=0.14.1",
+  "ty>=0.0.1a23",
+]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+force-exclude = true
+
+lint.extend-select = [
+  "ANN",
+  "B",
+  "C4",
+  "EXE",
+  "FA",
+  "FLY",
+  "FURB",
+  "G",
+  "I",
+  "ISC",
+  "LOG",
+  "PERF",
+  "PGH",
+  "PIE",
+  "PT",
+  "PYI",
+  "RET",
+  "RSE",
+  "RUF",
+  "SIM",
+  "SLOT",
+  "TCH",
+  "TRY",
+  "UP",
+  "W",
+]
+lint.ignore = [
+  "ANN401",
+  "COM812",
+  "COM819",
+  "D206",
+  "D300",
+  "E111",
+  "E114",
+  "E117",
+  "G004",
+  "PT011",
+  "PT012",
+  "Q000",
+  "Q001",
+  "Q002",
+  "Q003",
+  "RET505",
+  "RET506",
+  "RUF005",
+  "SIM108",
+  "TRY003",
+  "W191",
+]
+lint.extend-per-file-ignores."tests/**" = [
+  "ANN001",
+  "ANN201",
+  "RUF029",
+  "SIM117",
+  "SIM300",
+]
+lint.isort.known-first-party = [ "csb" ]
+
+[tool.pytest.ini_options]
+testpaths = [ "tests" ]
