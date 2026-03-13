@@ -9,6 +9,9 @@ paths:
   boundaries: data/boundaries/US48_ASD_CNTY_Albers.parquet
 
 create:
+  phase1_workers: 2       # memory-heavy: raster I/O + polygonize
+  phase2_workers: 8       # CPU-bound: eliminate + simplify
+  tile_size: 2500
   eliminate_thresholds: [100, 1000, 10000]
   min_polygon_area: 10000
   simplify_tolerance: 60
