@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import TYPE_CHECKING
 from unittest.mock import patch
 
@@ -13,31 +12,40 @@ from shapely import box, to_wkb
 from csb.io import write_geoparquet
 from csb.prep import _spatial_join_boundaries, run_prep
 
+if TYPE_CHECKING:
+    from pathlib import Path
 
-def _make_area_table(conn, tmp_path, n=3):
+
+def _make_area_table(conn: duckdb.DuckDBPyConnection, tmp_path: Path, n: int = 3) -> None:
     """Create a small area table in DuckDB with row_id and geometry (via GeoParquet)."""
     geoms = [to_wkb(box(i * 100, 0, (i + 1) * 100, 100)) for i in range(n)]
-    table = pa.table({
-        "geometry": pa.array(geoms, type=pa.binary()),
-        "effective_count": pa.array(list(range(1, n + 1)), type=pa.int32()),
-    })
+    table = pa.table(
+        {
+            "geometry": pa.array(geoms, type=pa.binary()),
+            "effective_count": pa.array(list(range(1, n + 1)), type=pa.int32()),
+        }
+    )
     area_path = tmp_path / "_area_tmp.parquet"
     write_geoparquet(table, area_path)
-    conn.execute(f"CREATE TABLE area AS SELECT *, ROW_NUMBER() OVER () AS row_id FROM '{area_path}'")
+    conn.execute(
+        f"CREATE TABLE area AS SELECT *, ROW_NUMBER() OVER () AS row_id FROM '{area_path}'"
+    )
 
 
-def _make_boundaries_parquet(path, n=1):
+def _make_boundaries_parquet(path: Path, n: int = 1) -> Path:
     """Create a boundary parquet that covers the test area."""
     # One big boundary covering everything
     geom = to_wkb(box(-100, -100, 1000, 1000))
-    table = pa.table({
-        "geometry": pa.array([geom], type=pa.binary()),
-        "STATEFIPS": pa.array(["17"], type=pa.string()),
-        "STATEASD": pa.array(["1710"], type=pa.string()),
-        "ASD": pa.array(["10"], type=pa.string()),
-        "CNTY": pa.array(["Cook"], type=pa.string()),
-        "CNTYFIPS": pa.array(["031"], type=pa.string()),
-    })
+    table = pa.table(
+        {
+            "geometry": pa.array([geom], type=pa.binary()),
+            "STATEFIPS": pa.array(["17"], type=pa.string()),
+            "STATEASD": pa.array(["1710"], type=pa.string()),
+            "ASD": pa.array(["10"], type=pa.string()),
+            "CNTY": pa.array(["Cook"], type=pa.string()),
+            "CNTYFIPS": pa.array(["031"], type=pa.string()),
+        }
+    )
     write_geoparquet(table, path)
     return path
 
@@ -74,14 +82,16 @@ def test_spatial_join_no_overlap(tmp_path: Path):
 
     # Boundary far away from area polygons
     geom = to_wkb(box(10000, 10000, 20000, 20000))
-    table = pa.table({
-        "geometry": pa.array([geom], type=pa.binary()),
-        "STATEFIPS": pa.array(["06"], type=pa.string()),
-        "STATEASD": pa.array(["0610"], type=pa.string()),
-        "ASD": pa.array(["10"], type=pa.string()),
-        "CNTY": pa.array(["LA"], type=pa.string()),
-        "CNTYFIPS": pa.array(["037"], type=pa.string()),
-    })
+    table = pa.table(
+        {
+            "geometry": pa.array([geom], type=pa.binary()),
+            "STATEFIPS": pa.array(["06"], type=pa.string()),
+            "STATEASD": pa.array(["0610"], type=pa.string()),
+            "ASD": pa.array(["10"], type=pa.string()),
+            "CNTY": pa.array(["LA"], type=pa.string()),
+            "CNTYFIPS": pa.array(["037"], type=pa.string()),
+        }
+    )
     boundary_path = tmp_path / "boundaries_far.parquet"
     write_geoparquet(table, boundary_path)
 

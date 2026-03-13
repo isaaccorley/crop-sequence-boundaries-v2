@@ -10,6 +10,8 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
+    from rich.progress import TaskID
+
 logger = logging.getLogger(__name__)
 
 CDL_BASE_URL = "https://www.nass.usda.gov/Research_and_Science/Cropland/Release/datasets"
@@ -25,7 +27,7 @@ def cdl_url(year: int, resolution: int = 30) -> str:
     """Return the download URL for a CDL zip file.
 
     Args:
-        year: CDL year (2008–present).
+        year: CDL year (2008-present).
         resolution: Pixel size in meters (10 or 30).
 
     Returns:
@@ -93,12 +95,18 @@ def download_cdl(
         ) as progress:
             task = progress.add_task("download", total=None)
 
-            def _reporthook(block_num: int, block_size: int, total_size: int) -> None:
+            def _reporthook(
+                block_num: int,
+                block_size: int,
+                total_size: int,
+                *,
+                _tid: TaskID = task,
+            ) -> None:
                 if total_size > 0:
-                    progress.update(task, total=total_size)
-                progress.update(task, advance=block_size)
+                    progress.update(_tid, total=total_size)
+                progress.update(_tid, advance=block_size)
 
-            urllib.request.urlretrieve(url, zip_path, reporthook=_reporthook)  # noqa: S310
+            urllib.request.urlretrieve(url, zip_path, reporthook=_reporthook)
 
         logger.info(f"{year}: Extracting {zip_path}")
         with zipfile.ZipFile(zip_path, "r") as zf:

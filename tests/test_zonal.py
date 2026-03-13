@@ -16,7 +16,9 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 
-def _write_value_raster(path, data, transform, crs="EPSG:5070"):
+def _write_value_raster(
+    path: Path, data: np.ndarray, transform: object, crs: str = "EPSG:5070"
+) -> None:
     """Helper to write a small GeoTIFF."""
     profile = {
         "driver": "GTiff",

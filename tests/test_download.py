@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from csb.download import CDL_BASE_URL, MIN_YEAR, cdl_url, download_cdl
+from csb.download import CDL_BASE_URL, cdl_url, download_cdl
 
 if TYPE_CHECKING:
     from pathlib import Path

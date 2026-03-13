@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from unittest.mock import patch
 
 import numpy as np
@@ -15,7 +15,9 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 
-def _make_national_cdl(base_dir, years=(2020, 2021, 2022), size=20):
+def _make_national_cdl(
+    base_dir: Path, years: tuple[int, ...] = (2020, 2021, 2022), size: int = 20
+) -> None:
     """Create synthetic national CDL rasters for multiple years."""
     transform = from_bounds(0, 0, size * 30, size * 30, size, size)
     rng = np.random.default_rng(42)
@@ -39,7 +41,7 @@ def _make_national_cdl(base_dir, years=(2020, 2021, 2022), size=20):
             dst.write(data, 1)
 
 
-def _make_config(national_cdl_dir):
+def _make_config(national_cdl_dir: Path) -> dict[str, Any]:
     """Create a minimal config dict for testing."""
     return {
         "global": {"cpu_fraction": 0.5, "min_cropland_years": 1},
@@ -178,7 +180,9 @@ def test_run_create(tmp_path: Path):
 
     cfg = _make_config(cdl_dir)
 
-    with patch("csb.utils.parallel_map", side_effect=lambda fn, items, **kw: [fn(i) for i in items]):
+    with patch(
+        "csb.utils.parallel_map", side_effect=lambda fn, items, **kw: [fn(i) for i in items]
+    ):
         result_dir = run_create(cfg, 2020, 2021, output_dir)
 
     assert result_dir.exists()
@@ -208,7 +212,9 @@ def test_run_create_single_area(tmp_path: Path):
 
     cfg = _make_config(cdl_dir)
 
-    with patch("csb.utils.parallel_map", side_effect=lambda fn, items, **kw: [fn(i) for i in items]):
+    with patch(
+        "csb.utils.parallel_map", side_effect=lambda fn, items, **kw: [fn(i) for i in items]
+    ):
         result_dir = run_create(cfg, 2020, 2021, output_dir, area="A0")
 
     parquets = list(result_dir.glob("*.parquet"))

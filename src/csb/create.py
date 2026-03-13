@@ -84,29 +84,26 @@ def _combine_years_windowed(
         effective_per_combo: 1D int16 array — (COUNT0 - COUNT45) for each combo ID
         transform: Affine transform for this window
     """
-    stacks: list[np.ndarray] = []
+    # Incrementally pack each year's CDL into seq_ids to avoid holding all
+    # N raster arrays in memory simultaneously (~200MB each for 5000x5000).
+    base = np.int64(300)
+    seq_ids: np.ndarray | None = None
     transform = None
-    for year in years:
+    for i, year in enumerate(years):
         cdl_path = national_cdl / str(year) / f"{year}_30m_cdls.tif"
         arr, t = _read_window(cdl_path, window)
-        # Reclassify non-cropland pixels (CDL > CDL_CROP_MAX, i.e. water/developed/forest/
-        # grassland/wetlands) to BARREN_CODE so they don't contribute to effective_count.
-        # CDL 0 (no-data) is left as 0.  Cropland classes 1–CDL_CROP_MAX are kept as-is.
-        arr = arr.astype(np.int64)
-        arr = np.where((arr > CDL_CROP_MAX) & (arr != 0), BARREN_CODE, arr)
-        stacks.append(arr)
         if transform is None:
             transform = t
+        # Reclassify non-cropland pixels (CDL > CDL_CROP_MAX) to BARREN_CODE.
+        arr = arr.astype(np.int64)
+        arr = np.where((arr > CDL_CROP_MAX) & (arr != 0), BARREN_CODE, arr)
+        if seq_ids is None:
+            seq_ids = arr  # first year: just the array itself
+        else:
+            seq_ids += arr * (base**i)
 
-    # Encode each pixel's annual sequence as a single packed int64.
-    # CDL values are 0-255, so base-256 packing is lossless for up to ~8 years.
-    # For longer spans we use base-300 to be safe.
-    shape = stacks[0].shape
-    base = np.int64(300)
-    seq_ids = np.zeros(shape, dtype=np.int64)
-    for i, arr in enumerate(stacks):
-        seq_ids += arr * (base**i)
-    del stacks  # free ~N×200MB per worker
+    assert seq_ids is not None
+    shape = seq_ids.shape
 
     # Assign compact sequential IDs (0, 1, 2, ...) to each unique sequence
     unique_seqs, flat_ids = np.unique(seq_ids.ravel(), return_inverse=True)

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 from click.testing import CliRunner
 
@@ -31,7 +31,9 @@ def test_prep_invokes_run_prep(tmp_path: Path):
     output_dir = str(tmp_path / "prep_out")
 
     with patch("csb.prep.run_prep", return_value=Path(output_dir)) as mock:
-        result = runner.invoke(main, ["prep", "2020", "2022", "--create-dir", str(create_dir), "-o", output_dir])
+        result = runner.invoke(
+            main, ["prep", "2020", "2022", "--create-dir", str(create_dir), "-o", output_dir]
+        )
 
     assert result.exit_code == 0
     mock.assert_called_once()
@@ -44,7 +46,9 @@ def test_distribute_invokes_run_distribute(tmp_path: Path):
     output_dir = str(tmp_path / "dist_out")
 
     with patch("csb.distribute.run_distribute", return_value=Path(output_dir)) as mock:
-        result = runner.invoke(main, ["distribute", "2020", "2022", "--prep-dir", str(prep_dir), "-o", output_dir])
+        result = runner.invoke(
+            main, ["distribute", "2020", "2022", "--prep-dir", str(prep_dir), "-o", output_dir]
+        )
 
     assert result.exit_code == 0
     mock.assert_called_once()

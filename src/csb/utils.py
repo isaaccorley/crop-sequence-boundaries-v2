@@ -4,10 +4,9 @@ from __future__ import annotations
 
 import logging
 import multiprocessing
+from collections import defaultdict
 from concurrent.futures import ProcessPoolExecutor
 from typing import TYPE_CHECKING, Any
-
-from collections import defaultdict
 
 import numpy as np
 import pyarrow as pa
@@ -120,7 +119,7 @@ def eliminate_small_polygons(
 
         # For each small polygon, find the large neighbor with the longest shared boundary
         merge_map: dict[int, tuple[int, float]] = {}
-        for qi, ri, length in zip(small_geom_idx, r_pos, shared_lengths):
+        for qi, ri, length in zip(small_geom_idx, r_pos, shared_lengths, strict=False):
             if length > merge_map.get(qi, (-1, 0.0))[1]:
                 merge_map[qi] = (int(ri), float(length))
 

@@ -14,7 +14,7 @@ import yaml
 CDL_CROP_MAX = 81  # inclusive: CDL in [1, CDL_CROP_MAX] treated as cropland
 
 # Sentinel value assigned to non-cropland pixels before packing sequences.
-# Must be distinct from all valid CDL crop classes (1–81).
+# Must be distinct from all valid CDL crop classes (1-81).
 BARREN_CODE = 45
 
 # 30m CDL pixel area in sq metres (EPSG:5070 Albers Equal Area, so exact).

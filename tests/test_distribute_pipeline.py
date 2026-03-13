@@ -18,20 +18,24 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 
-def _make_prep_parquet(path, n=5, statefips="17", csbyears="2024"):
+def _make_prep_parquet(
+    path: Path, n: int = 5, statefips: str = "17", csbyears: str = "2024"
+) -> Path:
     """Create a small PREP-like parquet for testing."""
     geoms = [to_wkb(box(i * 100, 0, (i + 1) * 100, 100)) for i in range(n)]
-    table = pa.table({
-        "geometry": pa.array(geoms, type=pa.binary()),
-        "effective_count": pa.array(list(range(1, n + 1)), type=pa.int32()),
-        "STATEFIPS": pa.array([statefips] * n, type=pa.string()),
-        "STATEASD": pa.array(["1710"] * n, type=pa.string()),
-        "ASD": pa.array(["10"] * n, type=pa.string()),
-        "CNTY": pa.array(["Cook"] * n, type=pa.string()),
-        "CNTYFIPS": pa.array(["031"] * n, type=pa.string()),
-        "CSBYEARS": pa.array([csbyears] * n, type=pa.string()),
-        "CSBID": pa.array([""] * n, type=pa.string()),
-    })
+    table = pa.table(
+        {
+            "geometry": pa.array(geoms, type=pa.binary()),
+            "effective_count": pa.array(list(range(1, n + 1)), type=pa.int32()),
+            "STATEFIPS": pa.array([statefips] * n, type=pa.string()),
+            "STATEASD": pa.array(["1710"] * n, type=pa.string()),
+            "ASD": pa.array(["10"] * n, type=pa.string()),
+            "CNTY": pa.array(["Cook"] * n, type=pa.string()),
+            "CNTYFIPS": pa.array(["031"] * n, type=pa.string()),
+            "CSBYEARS": pa.array([csbyears] * n, type=pa.string()),
+            "CSBID": pa.array([""] * n, type=pa.string()),
+        }
+    )
     write_geoparquet(table, path)
     return path
 
@@ -76,7 +80,9 @@ def test_compute_fields(tmp_path: Path):
     _build_national(conn, prep_dir)
     _compute_fields(conn)
 
-    result = conn.execute("SELECT CSBACRES, INSIDE_X, INSIDE_Y, CSBID FROM national LIMIT 1").fetchone()
+    result = conn.execute(
+        "SELECT CSBACRES, INSIDE_X, INSIDE_Y, CSBID FROM national LIMIT 1"
+    ).fetchone()
     assert result is not None
     csbacres, inside_x, inside_y, csbid = result
     assert csbacres > 0
@@ -99,27 +105,33 @@ def test_compute_fields_csbid_format(tmp_path: Path):
     _build_national(conn, prep_dir)
     _compute_fields(conn)
 
-    rows = conn.execute("SELECT CSBID, STATEFIPS, CSBYEARS FROM national ORDER BY national_oid").fetchall()
+    rows = conn.execute(
+        "SELECT CSBID, STATEFIPS, CSBYEARS FROM national ORDER BY national_oid"
+    ).fetchall()
     for csbid, fips, csbyears in rows:
         assert csbid.startswith(fips)
         assert csbyears in csbid
     conn.close()
 
 
-def _make_national_parquet(path, n=3, statefips="17"):
+def _make_national_parquet(path: Path, n: int = 3, statefips: str = "17") -> Path:
     """Create a national-like parquet with national_oid and computed fields."""
     geoms = [to_wkb(box(i * 100, 0, (i + 1) * 100, 100)) for i in range(n)]
-    table = pa.table({
-        "geometry": pa.array(geoms, type=pa.binary()),
-        "effective_count": pa.array(list(range(1, n + 1)), type=pa.int32()),
-        "STATEFIPS": pa.array([statefips] * n, type=pa.string()),
-        "CSBYEARS": pa.array(["2024"] * n, type=pa.string()),
-        "CSBID": pa.array([f"{statefips}2024{str(i).zfill(9)}" for i in range(1, n + 1)], type=pa.string()),
-        "CSBACRES": pa.array([10.0] * n, type=pa.float64()),
-        "INSIDE_X": pa.array([50.0 + i * 100 for i in range(n)], type=pa.float64()),
-        "INSIDE_Y": pa.array([50.0] * n, type=pa.float64()),
-        "national_oid": pa.array(list(range(1, n + 1)), type=pa.int64()),
-    })
+    table = pa.table(
+        {
+            "geometry": pa.array(geoms, type=pa.binary()),
+            "effective_count": pa.array(list(range(1, n + 1)), type=pa.int32()),
+            "STATEFIPS": pa.array([statefips] * n, type=pa.string()),
+            "CSBYEARS": pa.array(["2024"] * n, type=pa.string()),
+            "CSBID": pa.array(
+                [f"{statefips}2024{str(i).zfill(9)}" for i in range(1, n + 1)], type=pa.string()
+            ),
+            "CSBACRES": pa.array([10.0] * n, type=pa.float64()),
+            "INSIDE_X": pa.array([50.0 + i * 100 for i in range(n)], type=pa.float64()),
+            "INSIDE_Y": pa.array([50.0] * n, type=pa.float64()),
+            "national_oid": pa.array(list(range(1, n + 1)), type=pa.int64()),
+        }
+    )
     write_geoparquet(table, path)
     return path
 

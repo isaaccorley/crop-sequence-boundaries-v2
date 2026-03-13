@@ -8,9 +8,7 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-TIGER_COUNTIES_URL = (
-    "https://www2.census.gov/geo/tiger/TIGER2020/COUNTY/tl_2020_us_county.zip"
-)
+TIGER_COUNTIES_URL = "https://www2.census.gov/geo/tiger/TIGER2020/COUNTY/tl_2020_us_county.zip"
 
 NASS_COUNTY_LIST_URL = (
     "https://www.nass.usda.gov/Data_and_Statistics/County_Data_Files/"
@@ -28,7 +26,7 @@ def _fetch_nass_crosswalk() -> dict[tuple[str, str], tuple[str, str]]:
         Dict mapping (STATEFIPS, COUNTYFIPS) -> (ASD_CODE, STATEASD).
     """
     logger.info("Downloading NASS county-to-ASD crosswalk")
-    resp = urllib.request.urlopen(NASS_COUNTY_LIST_URL)  # noqa: S310
+    resp = urllib.request.urlopen(NASS_COUNTY_LIST_URL)
     text = resp.read().decode("utf-8")
 
     crosswalk: dict[tuple[str, str], tuple[str, str]] = {}

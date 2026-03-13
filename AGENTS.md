@@ -28,17 +28,17 @@ CDL Rasters ──→ create ──→ prep ──→ distribute ──→ Natio
 
 ### Module Map
 
-| Module | Role |
-|--------|------|
-| `cli.py` | Click CLI; 7 commands |
-| `create.py` | Windowed-read national CDL; polygonize; eliminate; simplify + filter in DuckDB |
-| `prep.py` | Spatial join with boundaries; bulk zonal CDL stats via exactextract |
-| `distribute.py` | Merge to national; split by state; export GeoParquet |
-| `download.py` | Download USDA CDL rasters (30m/10m) |
-| `boundaries.py` | Build ASD+county boundary file from TIGER/NASS |
-| `utils.py` | Vector ops (polygonize, eliminate), zonal stats (exactextract), parallelism helpers |
-| `io.py` | GeoParquet write |
-| `config.py` | YAML config loader; STATE_FIPS mapping; constants (BARREN_CODE, DEFAULT_CRS, ACRES_PER_SQM) |
+| Module          | Role                                                                                        |
+| --------------- | ------------------------------------------------------------------------------------------- |
+| `cli.py`        | Click CLI; 7 commands                                                                       |
+| `create.py`     | Windowed-read national CDL; polygonize; eliminate; simplify + filter in DuckDB              |
+| `prep.py`       | Spatial join with boundaries; bulk zonal CDL stats via exactextract                         |
+| `distribute.py` | Merge to national; split by state; export GeoParquet                                        |
+| `download.py`   | Download USDA CDL rasters (30m/10m)                                                         |
+| `boundaries.py` | Build ASD+county boundary file from TIGER/NASS                                              |
+| `utils.py`      | Vector ops (polygonize, eliminate), zonal stats (exactextract), parallelism helpers         |
+| `io.py`         | GeoParquet write                                                                            |
+| `config.py`     | YAML config loader; STATE_FIPS mapping; constants (BARREN_CODE, DEFAULT_CRS, ACRES_PER_SQM) |
 
 ## Key Conventions
 
@@ -70,13 +70,13 @@ make clean      # remove build artifacts
 
 ## Dependencies
 
-| Package | Purpose |
-|---------|---------|
-| contourrs | Rust raster→polygon (zero-copy Arrow) |
-| duckdb | SQL spatial joins, filtering, simplify |
-| exactextract | C++ zonal statistics |
-| shapely | Geometry operations (eliminate) |
-| polars | DataFrame operations |
-| rasterio | GeoTIFF windowed reads |
-| click | CLI framework |
-| rich | Terminal progress bars |
+| Package      | Purpose                                |
+| ------------ | -------------------------------------- |
+| contourrs    | Rust raster→polygon (zero-copy Arrow)  |
+| duckdb       | SQL spatial joins, filtering, simplify |
+| exactextract | C++ zonal statistics                   |
+| shapely      | Geometry operations (eliminate)        |
+| polars       | DataFrame operations                   |
+| rasterio     | GeoTIFF windowed reads                 |
+| click        | CLI framework                          |
+| rich         | Terminal progress bars                 |
