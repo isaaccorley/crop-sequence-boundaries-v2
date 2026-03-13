@@ -1,4 +1,4 @@
-"""Tests for csb.vector."""
+"""Tests for csb.utils — vector operations."""
 
 from __future__ import annotations
 
@@ -7,12 +7,11 @@ import pyarrow as pa
 from rasterio.transform import from_bounds
 from shapely import Point, box, to_wkb
 
-from csb.vector import (
+from csb.utils import (
     arrow_to_geometries,
     eliminate_small_polygons,
     geometries_to_arrow,
     polygonize,
-    simplify_geometries,
 )
 
 
@@ -74,32 +73,6 @@ def test_eliminate_multiple_thresholds():
     result_geoms, _result_vals = eliminate_small_polygons(geoms, vals, thresholds=[5, 200])
     # small (area=2) merged at threshold 5, med (area=100) merged at threshold 200
     assert len(result_geoms) == 1
-
-
-def test_simplify_geometries():
-    # Create a polygon with many vertices
-    from shapely.geometry import Polygon
-
-    coords = [
-        (0, 0),
-        (1, 0.1),
-        (2, 0),
-        (3, 0.1),
-        (4, 0),
-        (4, 4),
-        (3, 3.9),
-        (2, 4),
-        (1, 3.9),
-        (0, 4),
-        (0, 0),
-    ]
-    poly = Polygon(coords)
-
-    simplified = simplify_geometries([poly], tolerance=0.5)
-    assert len(simplified) == 1
-    # Should have fewer vertices
-    assert len(simplified[0].exterior.coords) < len(poly.exterior.coords)
-    assert simplified[0].is_valid
 
 
 def test_geometries_to_arrow():

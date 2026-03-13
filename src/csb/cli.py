@@ -122,6 +122,65 @@ def distribute(
     run_distribute(cfg, start_year, end_year, prep_dir, out)
 
 
+@main.command()
+@click.argument("start_year", type=int)
+@click.argument("end_year", type=int)
+@click.option(
+    "--output",
+    "-o",
+    type=click.Path(),
+    default=None,
+    help="Output directory. Defaults to <config.paths.national_cdl>.",
+)
+@click.option(
+    "--resolution",
+    "-r",
+    type=click.Choice(["10", "30"]),
+    default="30",
+    help="Pixel resolution in meters. 10m only available for 2024+.",
+)
+@click.option("--overwrite", is_flag=True, help="Re-download existing files.")
+@click.pass_context
+def download(
+    ctx: click.Context,
+    start_year: int,
+    end_year: int,
+    output: str | None,
+    resolution: str,
+    overwrite: bool,
+) -> None:
+    """Download USDA CDL rasters for the given year range."""
+    from csb.download import download_cdl
+
+    cfg = ctx.obj["config"]
+    out = Path(output) if output else Path(cfg["paths"]["national_cdl"])
+    years = list(range(start_year, end_year + 1))
+
+    console.print(f"[bold]Downloading CDL {start_year}-{end_year} ({resolution}m) to {out}")
+    paths = download_cdl(years, out, resolution=int(resolution), overwrite=overwrite)
+    console.print(f"[bold green]Downloaded {len(paths)} CDL rasters")
+    for p in paths:
+        console.print(f"  {p}")
+
+
+@main.command(name="build-boundaries")
+@click.option(
+    "--output",
+    "-o",
+    type=click.Path(),
+    default=None,
+    help="Output path. Defaults to <config.paths.boundaries>.",
+)
+@click.pass_context
+def build_boundaries(ctx: click.Context, output: str | None) -> None:
+    """Build ASD+county boundary GeoParquet from Census TIGER + NASS crosswalk."""
+    from csb.boundaries import build_boundaries as _build
+
+    cfg = ctx.obj["config"]
+    out = Path(output) if output else Path(cfg["paths"]["boundaries"])
+    _build(out)
+
+
 @main.command(name="run-all")
 @click.argument("start_year", type=int)
 @click.argument("end_year", type=int)

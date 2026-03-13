@@ -3,9 +3,8 @@
 Per area parquet (embarrassingly parallel):
 1. Load area GeoParquet into DuckDB
 2. Spatial join with county/ASD boundaries (largest overlap)
-3. Rasterize polygons for zone IDs (rusterize)
-4. Zonal stats per year: majority CDL value (exactextract)
-5. Join CDL columns, filter nulls
+3. Zonal stats per year: majority CDL value (exactextract)
+5. Bulk-join CDL columns via temp table, filter nulls
 6. Write enriched GeoParquet
 """
 
@@ -17,11 +16,12 @@ from pathlib import Path
 from typing import Any
 
 import duckdb
-from rusterize import rusterize
+import pyarrow as pa
 from shapely import from_wkb
 
+from csb.config import DEFAULT_CRS
 from csb.io import write_geoparquet
-from csb.zonal import zonal_majority
+from csb.utils import zonal_majority
 
 logger = logging.getLogger(__name__)
 
@@ -50,13 +50,13 @@ def _spatial_join_boundaries(
                 ROW_NUMBER() OVER (
                     PARTITION BY a.row_id
                     ORDER BY ST_Area(ST_Intersection(
-                        ST_GeomFromWKB(a.geometry),
-                        ST_GeomFromWKB(b.geometry)
+                        a.geometry,
+                        b.geometry
                     )) DESC
                 ) AS rn
             FROM area a
             JOIN boundaries b
-            ON ST_Intersects(ST_GeomFromWKB(a.geometry), ST_GeomFromWKB(b.geometry))
+            ON ST_Intersects(a.geometry, b.geometry)
         )
         SELECT * EXCLUDE (rn) FROM ranked WHERE rn = 1
     """)
@@ -72,9 +72,8 @@ def process_area(args: tuple[Path, dict[str, Any]]) -> str:
     output_dir = Path(params["output_dir"])
     boundaries_path = Path(cfg["paths"]["boundaries"])
     national_cdl = Path(cfg["paths"]["national_cdl"])
-    cell_size = cfg["raster"]["cell_size"]
 
-    area_name = parquet_path.stem.split("_")[0]
+    area_name = parquet_path.stem
     csb_years = f"{str(start_year)[2:]}{str(end_year)[2:]}"
     t0 = time.perf_counter()
 
@@ -98,7 +97,9 @@ def process_area(args: tuple[Path, dict[str, Any]]) -> str:
     _spatial_join_boundaries(conn, boundaries_path)
 
     # Check we have data
-    count = conn.execute("SELECT COUNT(*) FROM area").fetchone()[0]
+    row = conn.execute("SELECT COUNT(*) FROM area").fetchone()
+    assert row is not None
+    count = row[0]
     if count == 0:
         conn.close()
         return f"Skipped {area_name} (empty after join)"
@@ -111,32 +112,40 @@ def process_area(args: tuple[Path, dict[str, Any]]) -> str:
 
     import geopandas as gpd
 
-    gdf = gpd.GeoDataFrame({"zone_id": row_ids}, geometry=geoms, crs=cfg["raster"]["crs"])
-    zone_raster = rusterize(
-        gdf, field="zone_id", res=(cell_size, cell_size), dtype="int32", encoding="xarray"
-    )
-    zone_np = zone_raster.values
-    zone_transform = zone_raster.rio.transform()
-    zone_crs = str(zone_raster.rio.crs)
+    gdf = gpd.GeoDataFrame({"zone_id": row_ids}, geometry=geoms, crs=DEFAULT_CRS)
 
-    # Zonal stats per year
+    # Zonal stats per year — bulk UPDATE via temp table instead of row-by-row
     for year in range(start_year, end_year + 1):
         logger.info(f"{area_name}: Zonal stats {year}")
         cdl_path = national_cdl / str(year) / f"{year}_30m_cdls.tif"
-        zone_to_cdl = zonal_majority(zone_np, zone_transform, zone_crs, cdl_path)
+        zone_to_cdl = zonal_majority(gdf, "zone_id", cdl_path)
 
         col = f"CDL{year}"
         conn.execute(f"ALTER TABLE area ADD COLUMN {col} INTEGER")
-        for zone_id, cdl_val in zone_to_cdl.items():
-            conn.execute(f"UPDATE area SET {col} = {cdl_val} WHERE row_id = {zone_id}")
+
+        if zone_to_cdl:
+            # Register as Arrow table for bulk UPDATE
+            zonal_table = pa.table(
+                {
+                    "zone_id": pa.array(list(zone_to_cdl.keys()), type=pa.int64()),
+                    "cdl_val": pa.array(list(zone_to_cdl.values()), type=pa.int32()),
+                }
+            )
+            conn.register("zonal_tmp", zonal_table)
+            conn.execute(f"""
+                UPDATE area SET {col} = z.cdl_val
+                FROM zonal_tmp z
+                WHERE area.row_id = z.zone_id
+            """)
+            conn.unregister("zonal_tmp")
 
     # Filter nulls (polygon had no CDL coverage)
     conn.execute(f"DELETE FROM area WHERE CDL{end_year} IS NULL")
 
     # Export
     logger.info(f"{area_name}: Exporting enriched parquet")
-    out_table = conn.execute("SELECT * EXCLUDE (row_id) FROM area").fetch_arrow_table()
-    out_path = output_dir / f"{area_name}_CSB{csb_years}.parquet"
+    out_table = conn.execute("SELECT * EXCLUDE (row_id) FROM area").arrow().read_all()
+    out_path = output_dir / f"{area_name}.parquet"
     write_geoparquet(out_table, out_path)
     conn.close()
 
@@ -166,7 +175,7 @@ def run_prep(
     """
     from rich.console import Console
 
-    from csb.parallel import parallel_map, worker_count
+    from csb.utils import parallel_map, worker_count
 
     console = Console()
     create_dir = Path(create_dir)
@@ -177,8 +186,8 @@ def run_prep(
     console.print(f"PREP: Found {len(parquet_files)} area tiles from CREATE")
 
     # Skip done
-    done = {f.stem.split("_CSB")[0] for f in output_dir.glob("*.parquet")}
-    remaining = [f for f in parquet_files if f.stem.split("_")[0] not in done]
+    done = {f.stem for f in output_dir.glob("*.parquet")}
+    remaining = [f for f in parquet_files if f.stem not in done]
 
     if not remaining:
         console.print("[green]All areas already prepped.")

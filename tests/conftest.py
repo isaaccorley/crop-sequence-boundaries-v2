@@ -65,9 +65,9 @@ def sample_raster_path(tmp_path: Path, sample_raster: np.ndarray, sample_transfo
 
 @pytest.fixture
 def multi_year_rasters(tmp_path: Path) -> tuple[Path, list[int]]:
-    """Create 3 years of small CDL-like rasters for area 'G1'.
+    """Create 3 years of national CDL-like rasters.
 
-    Returns (base_dir, years) where base_dir/{year}/G1_{year}_0.tif exists.
+    Returns (base_dir, years) where base_dir/{year}/{year}_30m_cdls.tif exists.
     """
     years = [2020, 2021, 2022]
     rng = np.random.default_rng(42)
@@ -77,7 +77,7 @@ def multi_year_rasters(tmp_path: Path) -> tuple[Path, list[int]]:
         year_dir.mkdir()
         # 20x20 raster with random CDL-like values
         data = rng.choice([0, 1, 5, 45, 61, 176], size=(20, 20)).astype(np.int32)
-        path = year_dir / f"G1_{year}_0.tif"
+        path = year_dir / f"{year}_30m_cdls.tif"
         transform = from_bounds(0, 0, 600, 600, 20, 20)
         profile = {
             "driver": "GTiff",

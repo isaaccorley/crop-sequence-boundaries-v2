@@ -7,7 +7,26 @@ from typing import Any
 
 import yaml
 
-# State abbreviation -> FIPS code (CONUS only)
+# CDL classes 1-81 are crop/agriculture (annual crops, perennial crops, fallow/idle, misc ag).
+# Classes >= 82 are non-cropland (water=111, developed=121-124, forest=141-143,
+# grassland=176, wetlands=190, etc.).  These are remapped to BARREN_CODE before
+# computing crop-year counts so they don't inflate effective_count.
+CDL_CROP_MAX = 81  # inclusive: CDL in [1, CDL_CROP_MAX] treated as cropland
+
+# Sentinel value assigned to non-cropland pixels before packing sequences.
+# Must be distinct from all valid CDL crop classes (1–81).
+BARREN_CODE = 45
+
+# 30m CDL pixel area in sq metres (EPSG:5070 Albers Equal Area, so exact).
+CDL_PIXEL_AREA_SQM = 900
+
+# Albers Equal Area Conic (USGS version) — default CRS
+DEFAULT_CRS = "EPSG:5070"
+
+# Conversion factor
+ACRES_PER_SQM = 1.0 / 4046.86
+
+# CONUS state abbreviation → FIPS code (excludes AK, HI, territories)
 STATE_FIPS: dict[str, str] = {
     "AL": "01",
     "AZ": "04",
@@ -58,20 +77,6 @@ STATE_FIPS: dict[str, str] = {
     "WI": "55",
     "WY": "56",
 }
-
-FIPS_TO_STATE: dict[str, str] = {v: k for k, v in STATE_FIPS.items()}
-
-# Barren land CDL code (131 reclassed to 45)
-BARREN_CODE = 45
-
-# Albers Equal Area Conic (USGS version) — default CRS
-DEFAULT_CRS = "EPSG:5070"
-
-# Default raster cell size in meters
-DEFAULT_CELL_SIZE = 30
-
-# Conversion factor
-ACRES_PER_SQM = 1.0 / 4046.86
 
 
 def load_config(path: str | Path) -> dict[str, Any]:

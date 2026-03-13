@@ -1,8 +1,8 @@
-"""Tests for csb.parallel."""
+"""Tests for csb.utils — parallelism helpers."""
 
 from __future__ import annotations
 
-from csb.parallel import parallel_map, parallel_starmap, worker_count
+from csb.utils import parallel_map, parallel_starmap, worker_count
 
 
 def _square(x: int) -> int:

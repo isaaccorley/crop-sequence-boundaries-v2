@@ -1,0 +1,15 @@
+# Local config for benchmarking
+global:
+  cpu_fraction: 0.75
+  min_cropland_years: 2
+
+paths:
+  output: data/output
+  national_cdl: data/national_cdl
+  boundaries: data/boundaries/US48_ASD_CNTY_Albers.parquet
+
+create:
+  eliminate_thresholds: [100, 1000, 10000]
+  min_polygon_area: 10000
+  simplify_tolerance: 60
+

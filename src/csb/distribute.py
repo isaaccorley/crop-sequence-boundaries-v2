@@ -1,10 +1,10 @@
-"""Stage 3: DISTRIBUTE — Merge national dataset, split by state, export COGs + GeoParquet.
+"""Stage 3: DISTRIBUTE — Merge national dataset, split by state, export GeoParquet.
 
 1. Load all PREP parquets into DuckDB
 2. Compute CSBACRES, INSIDE_X, INSIDE_Y
 3. Generate CSBID = STATEFIPS + CSBYEARS + zero-padded national row ID
 4. Write national GeoParquet
-5. Per state (parallel): filter, write state GeoParquet + COG
+5. Per state (parallel): filter, write state GeoParquet
 """
 
 from __future__ import annotations
@@ -15,11 +15,9 @@ from pathlib import Path
 from typing import Any
 
 import duckdb
-from rusterize import rusterize
-from shapely import from_wkb
 
-from csb.config import ACRES_PER_SQM
-from csb.io import write_cog, write_geoparquet
+from csb.config import ACRES_PER_SQM, STATE_FIPS
+from csb.io import write_geoparquet
 
 logger = logging.getLogger(__name__)
 
@@ -37,21 +35,23 @@ def _build_national(conn: duckdb.DuckDBPyConnection, prep_dir: Path) -> int:
         SELECT *, ROW_NUMBER() OVER () AS national_oid
         FROM ({" UNION ALL ".join(parts)})
     """)
-    return conn.execute("SELECT COUNT(*) FROM national").fetchone()[0]
+    row = conn.execute("SELECT COUNT(*) FROM national").fetchone()
+    assert row is not None
+    return row[0]
 
 
 def _compute_fields(conn: duckdb.DuckDBPyConnection) -> None:
     """Add derived fields: CSBACRES, INSIDE_X, INSIDE_Y, final CSBID."""
     conn.execute(f"""
         ALTER TABLE national ADD COLUMN IF NOT EXISTS CSBACRES DOUBLE;
-        UPDATE national SET CSBACRES = ST_Area(ST_GeomFromWKB(geometry)) * {ACRES_PER_SQM};
+        UPDATE national SET CSBACRES = ST_Area(geometry) * {ACRES_PER_SQM};
     """)
     conn.execute("""
         ALTER TABLE national ADD COLUMN IF NOT EXISTS INSIDE_X DOUBLE;
         ALTER TABLE national ADD COLUMN IF NOT EXISTS INSIDE_Y DOUBLE;
         UPDATE national SET
-            INSIDE_X = ST_X(ST_PointOnSurface(ST_GeomFromWKB(geometry))),
-            INSIDE_Y = ST_Y(ST_PointOnSurface(ST_GeomFromWKB(geometry)));
+            INSIDE_X = ST_X(ST_PointOnSurface(geometry)),
+            INSIDE_Y = ST_Y(ST_PointOnSurface(geometry));
     """)
     conn.execute("""
         UPDATE national
@@ -60,49 +60,30 @@ def _compute_fields(conn: duckdb.DuckDBPyConnection) -> None:
 
 
 def _export_state(state: str, fips: str, params: dict[str, Any]) -> str:
-    """Export a single state to GeoParquet + COG."""
+    """Export a single state to GeoParquet."""
     national_parquet = Path(params["national_parquet"])
     output_dir = Path(params["output_dir"])
-    cell_size = params["cell_size"]
-    crs = params["crs"]
     csb_tag = params["csb_tag"]
 
     conn = duckdb.connect()
     conn.install_extension("spatial")
     conn.load_extension("spatial")
 
-    state_table = conn.execute(
-        f"SELECT * EXCLUDE (national_oid) FROM '{national_parquet}' WHERE STATEFIPS = '{fips}'"
-    ).fetch_arrow_table()
+    state_table = (
+        conn.execute(
+            f"SELECT * EXCLUDE (national_oid) FROM '{national_parquet}' WHERE STATEFIPS = '{fips}'"
+        )
+        .arrow()
+        .read_all()
+    )
+    conn.close()
 
     if state_table.num_rows == 0:
-        conn.close()
         return f"Skipped {state} (no data)"
 
-    # GeoParquet
-    parquet_path = output_dir / "parquet" / f"CSB{state}{csb_tag}.parquet"
+    parquet_path = output_dir / f"CSB{state}{csb_tag}.parquet"
     write_geoparquet(state_table, parquet_path)
 
-    # COG — rasterize national_oid as the cell value
-    geoms = [from_wkb(g.as_py()) for g in state_table.column("geometry")]
-
-    # Use a sequential integer for raster values since CSBID is a string
-    import geopandas as gpd
-
-    gdf = gpd.GeoDataFrame(
-        {"rid": list(range(1, len(geoms) + 1))},
-        geometry=geoms,
-        crs=crs,
-    )
-
-    if len(gdf) > 0:
-        raster = rusterize(
-            gdf, field="rid", res=(cell_size, cell_size), dtype="int32", encoding="xarray"
-        )
-        cog_path = output_dir / "cog" / f"CSB{state}{csb_tag}.tif"
-        write_cog(raster.values, cog_path, transform=raster.rio.transform(), crs=crs)
-
-    conn.close()
     logger.info(f"{state}: {state_table.num_rows} features exported")
     return f"Finished {state} ({state_table.num_rows} features)"
 
@@ -128,18 +109,15 @@ def run_distribute(
     """
     from rich.console import Console
 
-    from csb.parallel import parallel_starmap, worker_count
+    from csb.utils import parallel_starmap, worker_count
 
     console = Console()
     prep_dir = Path(prep_dir)
     output_dir = Path(output_dir)
 
-    for sub in ("national", "state/parquet", "state/cog"):
+    for sub in ("national", "state"):
         (output_dir / sub).mkdir(parents=True, exist_ok=True)
 
-    states = cfg["states"]
-    cell_size = cfg["raster"]["cell_size"]
-    crs = cfg["raster"]["crs"]
     csb_tag = f"{str(start_year)[2:]}{str(end_year)[2:]}"
 
     # 1. Build national table
@@ -159,24 +137,22 @@ def run_distribute(
 
     # 3. Export national GeoParquet
     national_parquet = output_dir / "national" / f"CSB{csb_tag}.parquet"
-    national_table = conn.execute("SELECT * FROM national").fetch_arrow_table()
+    national_table = conn.execute("SELECT * FROM national").arrow().read_all()
     write_geoparquet(national_table, national_parquet)
     conn.close()
     console.print(f"National parquet: {national_parquet}")
 
     # 4. State exports (parallel)
     n_workers = worker_count(cfg["global"]["cpu_fraction"])
-    console.print(f"Distributing to {len(states)} states with {n_workers} workers...")
+    console.print(f"Distributing to {len(STATE_FIPS)} states with {n_workers} workers...")
 
     params = {
         "national_parquet": str(national_parquet),
         "output_dir": str(output_dir / "state"),
-        "cell_size": cell_size,
-        "crs": crs,
         "csb_tag": csb_tag,
     }
 
-    task_args = [(state, fips, params) for state, fips in states.items()]
+    task_args = [(state, fips, params) for state, fips in STATE_FIPS.items()]
     results = parallel_starmap(_export_state, task_args, max_workers=n_workers)
 
     for r in results:

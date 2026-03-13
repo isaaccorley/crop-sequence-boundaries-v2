@@ -1,4 +1,4 @@
-.PHONY: install check test clean
+.PHONY: install check test build clean
 
 install:
 	uv sync --all-extras
@@ -8,6 +8,9 @@ check:
 
 test:
 	uv run pytest --cov=src tests/
+
+build:
+	uv build
 
 clean:
 	rm -rf build/ dist/ *.egg-info .pytest_cache .ruff_cache .coverage htmlcov/
