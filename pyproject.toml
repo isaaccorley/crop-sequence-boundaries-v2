@@ -23,17 +23,17 @@ classifiers = [
   "Topic :: Scientific/Engineering :: GIS",
 ]
 dependencies = [
-  "click>=8",
-  "contourrs",
-  "duckdb>=1",
-  "exactextract",
-  "numpy",
-  "polars>=1.39",
-  "pyarrow",
-  "pyyaml",
-  "rasterio",
-  "rich",
-  "shapely>=2",
+  "click>=8,<9",
+  "contourrs>=0,<1",
+  "duckdb>=1,<2",
+  "exactextract>=0,<1",
+  "numpy>=2,<3",
+  "polars>=1,<2",
+  "pyarrow>=23,<24",
+  "pyyaml>=6,<7",
+  "rasterio>=1,<2",
+  "rich>=14,<15",
+  "shapely>=2,<3",
 ]
 urls.Homepage = "https://github.com/isaaccorley/crop-sequence-boundaries-v2"
 urls.Repository = "https://github.com/isaaccorley/crop-sequence-boundaries-v2"
@@ -41,13 +41,13 @@ scripts.csb = "csb.cli:main"
 
 [dependency-groups]
 dev = [
-  "geopandas",
-  "pre-commit>=4.3",
-  "pytest>=8.4.2",
-  "pytest-cov>=7",
-  "pytest-xdist>=3.8",
-  "ruff>=0.14.1",
-  "ty>=0.0.1a23",
+  "geopandas>=1,<2",
+  "pre-commit>=4,<5",
+  "pytest>=9,<10",
+  "pytest-cov>=7,<8",
+  "pytest-xdist>=3,<4",
+  "ruff>=0,<1",
+  "ty>=0,<1",
 ]
 
 [tool.ruff]

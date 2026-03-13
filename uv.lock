@@ -218,28 +218,28 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "click", specifier = ">=8" },
-    { name = "contourrs" },
-    { name = "duckdb", specifier = ">=1" },
-    { name = "exactextract" },
-    { name = "numpy" },
-    { name = "polars", specifier = ">=1.39" },
-    { name = "pyarrow" },
-    { name = "pyyaml" },
-    { name = "rasterio" },
-    { name = "rich" },
-    { name = "shapely", specifier = ">=2" },
+    { name = "click", specifier = ">=8,<9" },
+    { name = "contourrs", specifier = ">=0,<1" },
+    { name = "duckdb", specifier = ">=1,<2" },
+    { name = "exactextract", specifier = ">=0,<1" },
+    { name = "numpy", specifier = ">=2,<3" },
+    { name = "polars", specifier = ">=1,<2" },
+    { name = "pyarrow", specifier = ">=23,<24" },
+    { name = "pyyaml", specifier = ">=6,<7" },
+    { name = "rasterio", specifier = ">=1,<2" },
+    { name = "rich", specifier = ">=14,<15" },
+    { name = "shapely", specifier = ">=2,<3" },
 ]
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "geopandas" },
-    { name = "pre-commit", specifier = ">=4.3" },
-    { name = "pytest", specifier = ">=8.4.2" },
-    { name = "pytest-cov", specifier = ">=7" },
-    { name = "pytest-xdist", specifier = ">=3.8" },
-    { name = "ruff", specifier = ">=0.14.1" },
-    { name = "ty", specifier = ">=0.0.1a23" },
+    { name = "geopandas", specifier = ">=1,<2" },
+    { name = "pre-commit", specifier = ">=4,<5" },
+    { name = "pytest", specifier = ">=9,<10" },
+    { name = "pytest-cov", specifier = ">=7,<8" },
+    { name = "pytest-xdist", specifier = ">=3,<4" },
+    { name = "ruff", specifier = ">=0,<1" },
+    { name = "ty", specifier = ">=0,<1" },
 ]
 
 [[package]]

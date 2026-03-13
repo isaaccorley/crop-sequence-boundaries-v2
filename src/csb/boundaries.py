@@ -6,6 +6,9 @@ import logging
 import urllib.request
 from pathlib import Path
 
+import geopandas as gpd
+from rich.console import Console
+
 logger = logging.getLogger(__name__)
 
 TIGER_COUNTIES_URL = "https://www2.census.gov/geo/tiger/TIGER2020/COUNTY/tl_2020_us_county.zip"
@@ -65,13 +68,10 @@ def build_boundaries(output_path: str | Path) -> Path:
     Returns:
         Path to the written file.
     """
-    from rich.console import Console
 
     console = Console()
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
-
-    import geopandas as gpd
 
     # 1. Download TIGER/Line counties
     console.print("[bold]Downloading Census TIGER/Line 2020 counties...")
