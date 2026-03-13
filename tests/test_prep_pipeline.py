@@ -50,7 +50,7 @@ def _make_boundaries_parquet(path: Path, n: int = 1) -> Path:
     return path
 
 
-def test_spatial_join_boundaries(tmp_path: Path):
+def test_spatial_join_boundaries(tmp_path: Path) -> None:
     conn = duckdb.connect()
     conn.install_extension("spatial")
     conn.load_extension("spatial")
@@ -72,7 +72,7 @@ def test_spatial_join_boundaries(tmp_path: Path):
     conn.close()
 
 
-def test_spatial_join_no_overlap(tmp_path: Path):
+def test_spatial_join_no_overlap(tmp_path: Path) -> None:
     """Boundaries that don't overlap any area polygons → empty result."""
     conn = duckdb.connect()
     conn.install_extension("spatial")
@@ -103,7 +103,7 @@ def test_spatial_join_no_overlap(tmp_path: Path):
     conn.close()
 
 
-def test_run_prep_skips_done(tmp_path: Path):
+def test_run_prep_skips_done(tmp_path: Path) -> None:
     """Already-processed areas should be skipped."""
     create_dir = tmp_path / "create"
     create_dir.mkdir()
@@ -125,7 +125,7 @@ def test_run_prep_skips_done(tmp_path: Path):
     assert result == output_dir
 
 
-def test_run_prep_no_files(tmp_path: Path):
+def test_run_prep_no_files(tmp_path: Path) -> None:
     """No parquets in create_dir → empty run."""
     create_dir = tmp_path / "create"
     create_dir.mkdir()

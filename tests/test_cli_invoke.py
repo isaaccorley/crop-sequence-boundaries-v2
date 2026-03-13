@@ -10,7 +10,7 @@ from click.testing import CliRunner
 from csb.cli import main
 
 
-def test_create_invokes_run_create(tmp_path: Path):
+def test_create_invokes_run_create(tmp_path: Path) -> None:
     runner = CliRunner()
     output_dir = str(tmp_path / "create_out")
 
@@ -24,7 +24,7 @@ def test_create_invokes_run_create(tmp_path: Path):
     assert call_args[0][2] == 2022
 
 
-def test_prep_invokes_run_prep(tmp_path: Path):
+def test_prep_invokes_run_prep(tmp_path: Path) -> None:
     runner = CliRunner()
     create_dir = tmp_path / "create"
     create_dir.mkdir()
@@ -39,7 +39,7 @@ def test_prep_invokes_run_prep(tmp_path: Path):
     mock.assert_called_once()
 
 
-def test_distribute_invokes_run_distribute(tmp_path: Path):
+def test_distribute_invokes_run_distribute(tmp_path: Path) -> None:
     runner = CliRunner()
     prep_dir = tmp_path / "prep"
     prep_dir.mkdir()
@@ -54,7 +54,7 @@ def test_distribute_invokes_run_distribute(tmp_path: Path):
     mock.assert_called_once()
 
 
-def test_run_all_invokes_all_stages(tmp_path: Path):
+def test_run_all_invokes_all_stages(tmp_path: Path) -> None:
     runner = CliRunner()
     output_dir = str(tmp_path / "all_out")
 
@@ -75,7 +75,7 @@ def test_run_all_invokes_all_stages(tmp_path: Path):
     assert call_args[0][2] == 2022
 
 
-def test_create_uses_default_output(tmp_path: Path):
+def test_create_uses_default_output(tmp_path: Path) -> None:
     """When no -o is given, output path comes from config."""
     runner = CliRunner()
 

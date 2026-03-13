@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 import pytest
 import rasterio
 from rasterio.transform import from_bounds
+
+if TYPE_CHECKING:
+    from affine import Affine
 
 
 @pytest.fixture
@@ -21,7 +25,7 @@ def default_config_path(configs_dir: Path) -> Path:
 
 
 @pytest.fixture
-def default_config(default_config_path: Path):
+def default_config(default_config_path: Path) -> dict[str, object]:
     from csb.config import load_config
 
     return load_config(default_config_path)
@@ -39,13 +43,13 @@ def sample_raster() -> np.ndarray:
 
 
 @pytest.fixture
-def sample_transform():
+def sample_transform() -> Affine:
     """Affine transform for a 10x10 raster at 30m resolution."""
     return from_bounds(0, 0, 300, 300, 10, 10)
 
 
 @pytest.fixture
-def sample_raster_path(tmp_path: Path, sample_raster: np.ndarray, sample_transform) -> Path:
+def sample_raster_path(tmp_path: Path, sample_raster: np.ndarray, sample_transform: Affine) -> Path:
     """Write sample_raster to a GeoTIFF and return the path."""
     path = tmp_path / "sample.tif"
     profile = {

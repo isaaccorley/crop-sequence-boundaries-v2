@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 def polygonize(
     data: np.ndarray,
     mask: np.ndarray | None = None,
-    transform: Any = None,
+    transform: object | None = None,
     connectivity: int = 4,
     nodata: int | None = 0,
 ) -> pa.Table:
@@ -230,7 +230,7 @@ def parallel_map(
     )
 
     max_workers = max_workers or worker_count()
-    logger.info(f"Running {len(items)} tasks across {max_workers} workers")
+    logger.info("Running %s tasks across %s workers", len(items), max_workers)
 
     progress = Progress(
         SpinnerColumn(),
@@ -275,7 +275,7 @@ def parallel_starmap(
     )
 
     max_workers = max_workers or worker_count()
-    logger.info(f"Running {len(items)} tasks across {max_workers} workers")
+    logger.info("Running %s tasks across %s workers", len(items), max_workers)
 
     progress = Progress(
         SpinnerColumn(),

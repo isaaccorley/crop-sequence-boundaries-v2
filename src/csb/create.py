@@ -154,7 +154,7 @@ def _phase1_polygonize(args: tuple[str, dict[str, Any]]) -> str:
     t0 = time.perf_counter()
 
     # 1. Read windows directly from national CDL
-    logger.info(f"{area}: Phase 1 - Reading {len(years)} years (windowed)")
+    logger.info("%s: Phase 1 - Reading %s years (windowed)", area, len(years))
     combo_raster, effective_per_combo, transform = _combine_years_windowed(
         national_cdl, years, window
     )
@@ -165,7 +165,7 @@ def _phase1_polygonize(args: tuple[str, dict[str, Any]]) -> str:
     if not mask.any():
         return f"Skipped {area} (no valid pixels)"
 
-    logger.info(f"{area}: Polygonizing {int(mask.sum())} valid pixels")
+    logger.info("%s: Polygonizing %s valid pixels", area, int(mask.sum()))
     table = polygonize(
         combo_raster,
         mask=mask,
@@ -218,7 +218,7 @@ def _phase1_polygonize(args: tuple[str, dict[str, Any]]) -> str:
     write_geoparquet(filtered, out_path)
 
     elapsed = time.perf_counter() - t0
-    logger.info(f"{area}: Phase 1 done - {filtered.num_rows} polygons in {elapsed:.0f}s")
+    logger.info("%s: Phase 1 done - %s polygons in %.0fs", area, filtered.num_rows, elapsed)
     return f"Phase1 {area} ({filtered.num_rows} polygons, {elapsed:.0f}s)"
 
 
@@ -254,14 +254,14 @@ def _phase2_eliminate(args: tuple[str, dict[str, Any]]) -> str:
     vals = filtered.column("effective_count").to_pylist()
     del filtered
 
-    logger.info(f"{area}: Phase 2 - Eliminating small polygons ({len(geoms)} input)")
+    logger.info("%s: Phase 2 - Eliminating small polygons (%s input)", area, len(geoms))
     geoms, vals = eliminate_small_polygons(geoms, vals, thresholds)
 
     if not geoms:
         return f"Skipped {area} (all eliminated)"
 
     # 3. Simplify + min-area filter in DuckDB
-    logger.info(f"{area}: Simplifying {len(geoms)} polygons (DuckDB)")
+    logger.info("%s: Simplifying %s polygons (DuckDB)", area, len(geoms))
     intermediate = geometries_to_arrow(geoms, columns={"effective_count": vals})
     del geoms, vals
 
@@ -294,7 +294,7 @@ def _phase2_eliminate(args: tuple[str, dict[str, Any]]) -> str:
     write_geoparquet(out_table, out_path)
 
     elapsed = time.perf_counter() - t0
-    logger.info(f"{area}: Phase 2 done - {out_table.num_rows} polygons in {elapsed:.0f}s")
+    logger.info("%s: Phase 2 done - %s polygons in %.0fs", area, out_table.num_rows, elapsed)
     return f"Finished {area} ({out_table.num_rows} polygons, {elapsed:.0f}s)"
 
 
@@ -332,7 +332,7 @@ def process_area(args: tuple[str, dict[str, Any]]) -> str:
     t0 = time.perf_counter()
 
     # 1. Read windows directly from national CDL (no split stage)
-    logger.info(f"{area}: Reading {len(years)} years (windowed)")
+    logger.info("%s: Reading %s years (windowed)", area, len(years))
     combo_raster, effective_per_combo, transform = _combine_years_windowed(
         national_cdl, years, window
     )
@@ -343,7 +343,7 @@ def process_area(args: tuple[str, dict[str, Any]]) -> str:
     if not mask.any():
         return f"Skipped {area} (no valid pixels)"
 
-    logger.info(f"{area}: Polygonizing {int(mask.sum())} valid pixels")
+    logger.info("%s: Polygonizing %s valid pixels", area, int(mask.sum()))
     table = polygonize(
         combo_raster,
         mask=mask,
@@ -394,7 +394,7 @@ def process_area(args: tuple[str, dict[str, Any]]) -> str:
     vals = filtered.column("effective_count").to_pylist()
     del table, combo_table, filtered  # free Arrow/DuckDB intermediates
 
-    logger.info(f"{area}: Eliminating small polygons ({len(geoms)} input)")
+    logger.info("%s: Eliminating small polygons (%s input)", area, len(geoms))
     geoms, vals = eliminate_small_polygons(geoms, vals, thresholds)
 
     if not geoms:
@@ -402,7 +402,7 @@ def process_area(args: tuple[str, dict[str, Any]]) -> str:
         return f"Skipped {area} (all eliminated)"
 
     # 5. Simplify + min-area filter in DuckDB
-    logger.info(f"{area}: Simplifying {len(geoms)} polygons (DuckDB)")
+    logger.info("%s: Simplifying %s polygons (DuckDB)", area, len(geoms))
     intermediate = geometries_to_arrow(geoms, columns={"effective_count": vals})
     conn.register("elim", intermediate)
     out_table = (
@@ -430,7 +430,7 @@ def process_area(args: tuple[str, dict[str, Any]]) -> str:
     write_geoparquet(out_table, out_path)
 
     elapsed = (time.perf_counter() - t0) / 60
-    logger.info(f"{area}: Done - {out_table.num_rows} polygons in {elapsed:.2f} min")
+    logger.info("%s: Done - %s polygons in %.2f min", area, out_table.num_rows, elapsed)
     return f"Finished {area} ({out_table.num_rows} polygons, {elapsed:.1f} min)"
 
 

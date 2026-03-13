@@ -16,7 +16,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 
-def _make_national_cdl(base_dir, years, size=20) -> None:
+def _make_national_cdl(base_dir: Path, years: list[int], size: int = 20) -> None:
     """Create national CDL rasters for testing."""
     transform = from_bounds(0, 0, size * 30, size * 30, size, size)
     rng = np.random.default_rng(42)
@@ -39,7 +39,7 @@ def _make_national_cdl(base_dir, years, size=20) -> None:
             dst.write(data, 1)
 
 
-def test_read_window(tmp_path: Path):
+def test_read_window(tmp_path: Path) -> None:
     """Read a window from a CDL raster."""
     _make_national_cdl(tmp_path, [2020], size=20)
     cdl_path = tmp_path / "2020" / "2020_30m_cdls.tif"
@@ -49,7 +49,7 @@ def test_read_window(tmp_path: Path):
     assert transform is not None
 
 
-def test_combine_years_windowed(tmp_path: Path):
+def test_combine_years_windowed(tmp_path: Path) -> None:
     """Stack windows across years and return combo_raster + effective_per_combo."""
     years = [2020, 2021, 2022]
     _make_national_cdl(tmp_path, years, size=20)
@@ -66,7 +66,7 @@ def test_combine_years_windowed(tmp_path: Path):
     assert combo_raster.max() < len(effective_per_combo)
 
 
-def test_combine_years_counts_correctly(tmp_path: Path):
+def test_combine_years_counts_correctly(tmp_path: Path) -> None:
     """Verify effective_count per combo with deterministic single-combo data."""
     transform = from_bounds(0, 0, 150, 150, 5, 5)
     profile = {
@@ -111,7 +111,7 @@ def test_combine_years_counts_correctly(tmp_path: Path):
     np.testing.assert_array_equal(combo_raster, np.zeros((5, 5), dtype=np.int32))
 
 
-def test_tile_windows_names():
+def test_tile_windows_names() -> None:
     """Tile names follow A0, A1, ..., B0, ... pattern."""
     tiles = _tile_windows(100, 100, 50)
     names = [name for name, _ in tiles]

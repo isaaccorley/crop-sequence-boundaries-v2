@@ -16,12 +16,14 @@ from pathlib import Path
 from typing import Any
 
 import duckdb
+import geopandas as gpd
 import pyarrow as pa
+from rich.console import Console
 from shapely import from_wkb
 
 from csb.config import DEFAULT_CRS
 from csb.io import write_geoparquet
-from csb.utils import zonal_majority
+from csb.utils import parallel_map, worker_count, zonal_majority
 
 logger = logging.getLogger(__name__)
 
@@ -82,7 +84,7 @@ def process_area(args: tuple[Path, dict[str, Any]]) -> str:
     conn.install_extension("spatial")
     conn.load_extension("spatial")
 
-    logger.info(f"{area_name}: Loading and joining boundaries")
+    logger.info("%s: Loading and joining boundaries", area_name)
     conn.execute(
         f"CREATE TABLE area AS SELECT *, ROW_NUMBER() OVER () AS row_id FROM '{parquet_path}'"
     )
@@ -105,18 +107,15 @@ def process_area(args: tuple[Path, dict[str, Any]]) -> str:
         return f"Skipped {area_name} (empty after join)"
 
     # Rasterize for zone IDs
-    logger.info(f"{area_name}: Rasterizing {count} polygons for zonal stats")
+    logger.info("%s: Rasterizing %s polygons for zonal stats", area_name, count)
     result = conn.execute("SELECT row_id, geometry FROM area").fetchall()
     row_ids = [r[0] for r in result]
     geoms = [from_wkb(r[1]) for r in result]
-
-    import geopandas as gpd
-
     gdf = gpd.GeoDataFrame({"zone_id": row_ids}, geometry=geoms, crs=DEFAULT_CRS)
 
     # Zonal stats per year — bulk UPDATE via temp table instead of row-by-row
     for year in range(start_year, end_year + 1):
-        logger.info(f"{area_name}: Zonal stats {year}")
+        logger.info("%s: Zonal stats %s", area_name, year)
         cdl_path = national_cdl / str(year) / f"{year}_30m_cdls.tif"
         zone_to_cdl = zonal_majority(gdf, "zone_id", cdl_path)
 
@@ -143,14 +142,14 @@ def process_area(args: tuple[Path, dict[str, Any]]) -> str:
     conn.execute(f"DELETE FROM area WHERE CDL{end_year} IS NULL")
 
     # Export
-    logger.info(f"{area_name}: Exporting enriched parquet")
+    logger.info("%s: Exporting enriched parquet", area_name)
     out_table = conn.execute("SELECT * EXCLUDE (row_id) FROM area").arrow().read_all()
     out_path = output_dir / f"{area_name}.parquet"
     write_geoparquet(out_table, out_path)
     conn.close()
 
     elapsed = (time.perf_counter() - t0) / 60
-    logger.info(f"{area_name}: Done in {elapsed:.2f} min")
+    logger.info("%s: Done in %.2f min", area_name, elapsed)
     return f"Finished {area_name} ({out_table.num_rows} features, {elapsed:.1f} min)"
 
 
@@ -173,10 +172,6 @@ def run_prep(
     Returns:
         Path to the output directory.
     """
-    from rich.console import Console
-
-    from csb.utils import parallel_map, worker_count
-
     console = Console()
     create_dir = Path(create_dir)
     output_dir = Path(output_dir)

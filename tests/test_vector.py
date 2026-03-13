@@ -2,10 +2,15 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import numpy as np
 import pyarrow as pa
 from rasterio.transform import from_bounds
 from shapely import Point, box, to_wkb
+
+if TYPE_CHECKING:
+    from affine import Affine
 
 from csb.utils import (
     arrow_to_geometries,
@@ -15,7 +20,7 @@ from csb.utils import (
 )
 
 
-def test_polygonize_basic(sample_raster: np.ndarray, sample_transform):
+def test_polygonize_basic(sample_raster: np.ndarray, sample_transform: Affine) -> None:
     table = polygonize(sample_raster, transform=sample_transform, nodata=0)
     assert isinstance(table, pa.Table)
     assert "geometry" in table.column_names
@@ -24,7 +29,7 @@ def test_polygonize_basic(sample_raster: np.ndarray, sample_transform):
     assert table.num_rows == 4
 
 
-def test_polygonize_with_mask(sample_raster: np.ndarray, sample_transform):
+def test_polygonize_with_mask(sample_raster: np.ndarray, sample_transform: Affine) -> None:
     mask = np.ones_like(sample_raster, dtype=np.bool_)
     mask[5:, :] = False  # mask out bottom half
     table = polygonize(sample_raster, mask=mask, transform=sample_transform, nodata=0)
@@ -32,14 +37,14 @@ def test_polygonize_with_mask(sample_raster: np.ndarray, sample_transform):
     assert table.num_rows == 2
 
 
-def test_polygonize_empty():
+def test_polygonize_empty() -> None:
     data = np.zeros((5, 5), dtype=np.int32)
     transform = from_bounds(0, 0, 150, 150, 5, 5)
     table = polygonize(data, transform=transform, nodata=0)
     assert table.num_rows == 0
 
 
-def test_eliminate_small_polygons():
+def test_eliminate_small_polygons() -> None:
     # Create a large polygon and a tiny one touching it
     big = box(0, 0, 100, 100)
     small = box(100, 0, 101, 1)  # area = 1 sq unit
@@ -54,7 +59,7 @@ def test_eliminate_small_polygons():
     assert 2 not in result_vals
 
 
-def test_eliminate_no_small_polygons():
+def test_eliminate_no_small_polygons() -> None:
     big1 = box(0, 0, 100, 100)
     big2 = box(100, 0, 200, 100)
 
@@ -62,7 +67,7 @@ def test_eliminate_no_small_polygons():
     assert len(geoms) == 2
 
 
-def test_eliminate_multiple_thresholds():
+def test_eliminate_multiple_thresholds() -> None:
     big = box(0, 0, 200, 200)
     med = box(200, 0, 210, 10)  # area = 100
     small = box(0, 200, 2, 201)  # area = 2
@@ -75,7 +80,7 @@ def test_eliminate_multiple_thresholds():
     assert len(result_geoms) == 1
 
 
-def test_geometries_to_arrow():
+def test_geometries_to_arrow() -> None:
     geoms = [Point(0, 0), Point(1, 1)]
     table = geometries_to_arrow(geoms, columns={"id": [1, 2]})
 
@@ -84,7 +89,7 @@ def test_geometries_to_arrow():
     assert "id" in table.column_names
 
 
-def test_arrow_to_geometries():
+def test_arrow_to_geometries() -> None:
     geoms = [Point(0, 0), Point(1, 1)]
     wkbs = [to_wkb(g) for g in geoms]
     table = pa.table({"geometry": pa.array(wkbs, type=pa.binary())})
@@ -95,7 +100,7 @@ def test_arrow_to_geometries():
     assert result[1].equals(Point(1, 1))
 
 
-def test_geometries_arrow_roundtrip():
+def test_geometries_arrow_roundtrip() -> None:
     original = [box(0, 0, 10, 10), box(10, 0, 20, 10)]
     table = geometries_to_arrow(original, columns={"val": [100, 200]})
     recovered = arrow_to_geometries(table)

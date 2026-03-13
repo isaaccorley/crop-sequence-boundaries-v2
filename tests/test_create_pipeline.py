@@ -54,7 +54,7 @@ def _make_config(national_cdl_dir: Path) -> dict[str, Any]:
     }
 
 
-def test_tile_windows():
+def test_tile_windows() -> None:
     """Tile windows should cover the full raster."""
     tiles = _tile_windows(100, 100, 50)
     assert len(tiles) == 4
@@ -62,13 +62,13 @@ def test_tile_windows():
     assert names == ["A0", "A1", "B0", "B1"]
 
 
-def test_tile_windows_non_divisible():
+def test_tile_windows_non_divisible() -> None:
     """Non-divisible dimensions should still cover all pixels."""
     tiles = _tile_windows(110, 60, 50)
     assert len(tiles) == 6  # 3 cols x 2 rows
 
 
-def test_process_area(tmp_path: Path):
+def test_process_area(tmp_path: Path) -> None:
     cdl_dir = tmp_path / "cdl"
     output_dir = tmp_path / "output"
     output_dir.mkdir()
@@ -94,7 +94,7 @@ def test_process_area(tmp_path: Path):
     assert "Finished" in result or "Skipped" in result
 
 
-def test_process_area_no_valid_pixels(tmp_path: Path):
+def test_process_area_no_valid_pixels(tmp_path: Path) -> None:
     """Area with all-zero rasters should be skipped."""
     cdl_dir = tmp_path / "cdl"
     output_dir = tmp_path / "output"
@@ -133,7 +133,7 @@ def test_process_area_no_valid_pixels(tmp_path: Path):
     assert "Skipped" in result
 
 
-def test_process_area_all_barren(tmp_path: Path):
+def test_process_area_all_barren(tmp_path: Path) -> None:
     """Area with all barren (45) pixels — effective count = 0 after subtraction."""
     cdl_dir = tmp_path / "cdl"
     output_dir = tmp_path / "output"
@@ -172,7 +172,7 @@ def test_process_area_all_barren(tmp_path: Path):
     assert "Skipped" in result
 
 
-def test_run_create(tmp_path: Path):
+def test_run_create(tmp_path: Path) -> None:
     cdl_dir = tmp_path / "cdl"
     output_dir = tmp_path / "output"
     years = (2020, 2021)
@@ -188,7 +188,7 @@ def test_run_create(tmp_path: Path):
     assert result_dir.exists()
 
 
-def test_run_create_skips_done(tmp_path: Path):
+def test_run_create_skips_done(tmp_path: Path) -> None:
     """Already-processed tiles should be skipped."""
     cdl_dir = tmp_path / "cdl"
     output_dir = tmp_path / "output"
@@ -204,7 +204,7 @@ def test_run_create_skips_done(tmp_path: Path):
     assert result_dir == output_dir
 
 
-def test_run_create_single_area(tmp_path: Path):
+def test_run_create_single_area(tmp_path: Path) -> None:
     cdl_dir = tmp_path / "cdl"
     output_dir = tmp_path / "output"
     years = (2020, 2021)
@@ -221,7 +221,7 @@ def test_run_create_single_area(tmp_path: Path):
     assert all("A0" in p.name for p in parquets)
 
 
-def test_process_area_high_min_cropland(tmp_path: Path):
+def test_process_area_high_min_cropland(tmp_path: Path) -> None:
     """With min_cropland_years very high, all polygons should be filtered."""
     cdl_dir = tmp_path / "cdl"
     output_dir = tmp_path / "output"

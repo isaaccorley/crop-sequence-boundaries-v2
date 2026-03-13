@@ -78,7 +78,7 @@ def download_cdl(
         tif_path = year_dir / tif_name
 
         if tif_path.exists() and not overwrite:
-            logger.info(f"{year}: Already exists at {tif_path}")
+            logger.info("%s: Already exists at %s", year, tif_path)
             extracted.append(tif_path)
             continue
 
@@ -86,7 +86,7 @@ def download_cdl(
         url = cdl_url(year, resolution)
         zip_path = year_dir / f"{year}_{resolution}m_cdls.zip"
 
-        logger.info(f"{year}: Downloading {url}")
+        logger.info("%s: Downloading %s", year, url)
         with Progress(
             TextColumn(f"[bold blue]{year}"),
             BarColumn(),
@@ -108,7 +108,7 @@ def download_cdl(
 
             urllib.request.urlretrieve(url, zip_path, reporthook=_reporthook)
 
-        logger.info(f"{year}: Extracting {zip_path}")
+        logger.info("%s: Extracting %s", year, zip_path)
         with zipfile.ZipFile(zip_path, "r") as zf:
             zf.extractall(year_dir)
         zip_path.unlink()
@@ -121,6 +121,6 @@ def download_cdl(
             if tifs:
                 extracted.append(tifs[0])
             else:
-                logger.warning(f"{year}: No .tif found after extraction")
+                logger.warning("%s: No .tif found after extraction", year)
 
     return extracted

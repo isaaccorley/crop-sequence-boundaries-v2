@@ -34,7 +34,7 @@ def _write_value_raster(
         dst.write(data, 1)
 
 
-def test_zonal_majority_basic(tmp_path: Path):
+def test_zonal_majority_basic(tmp_path: Path) -> None:
     """Two zone polygons, each with a clear majority value."""
     transform = from_bounds(0, 0, 300, 300, 10, 10)
 
@@ -60,7 +60,7 @@ def test_zonal_majority_basic(tmp_path: Path):
     assert result[2] == 176
 
 
-def test_zonal_majority_single_zone(tmp_path: Path):
+def test_zonal_majority_single_zone(tmp_path: Path) -> None:
     """Single zone covering the entire raster."""
     transform = from_bounds(0, 0, 150, 150, 5, 5)
 
@@ -78,7 +78,7 @@ def test_zonal_majority_single_zone(tmp_path: Path):
     assert result[1] == 42
 
 
-def test_zonal_majority_mixed_values(tmp_path: Path):
+def test_zonal_majority_mixed_values(tmp_path: Path) -> None:
     """Zone with mixed values should return the most common one."""
     transform = from_bounds(0, 0, 150, 150, 5, 5)
 

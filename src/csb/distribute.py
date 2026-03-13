@@ -84,7 +84,7 @@ def _export_state(state: str, fips: str, params: dict[str, Any]) -> str:
     parquet_path = output_dir / f"CSB{state}{csb_tag}.parquet"
     write_geoparquet(state_table, parquet_path)
 
-    logger.info(f"{state}: {state_table.num_rows} features exported")
+    logger.info("%s: %s features exported", state, state_table.num_rows)
     return f"Finished {state} ({state_table.num_rows} features)"
 
 

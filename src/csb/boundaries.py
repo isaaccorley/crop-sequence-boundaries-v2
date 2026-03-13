@@ -113,7 +113,7 @@ def build_boundaries(output_path: str | Path) -> Path:
     before = len(result)
     result = result[result["ASD"] != ""].copy()
     if before != len(result):
-        logger.info(f"Dropped {before - len(result)} counties with no ASD mapping")
+        logger.info("Dropped %s counties with no ASD mapping", before - len(result))
 
     # 6. Reproject to Albers
     console.print("[bold]Reprojecting to EPSG:5070...")

@@ -40,7 +40,7 @@ def _make_prep_parquet(
     return path
 
 
-def test_build_national(tmp_path: Path):
+def test_build_national(tmp_path: Path) -> None:
     prep_dir = tmp_path / "prep"
     prep_dir.mkdir()
     _make_prep_parquet(prep_dir / "area1.parquet", n=3)
@@ -58,7 +58,7 @@ def test_build_national(tmp_path: Path):
     conn.close()
 
 
-def test_build_national_empty(tmp_path: Path):
+def test_build_national_empty(tmp_path: Path) -> None:
     prep_dir = tmp_path / "prep"
     prep_dir.mkdir()
 
@@ -68,7 +68,7 @@ def test_build_national_empty(tmp_path: Path):
     conn.close()
 
 
-def test_compute_fields(tmp_path: Path):
+def test_compute_fields(tmp_path: Path) -> None:
     prep_dir = tmp_path / "prep"
     prep_dir.mkdir()
     _make_prep_parquet(prep_dir / "area1.parquet", n=3)
@@ -92,7 +92,7 @@ def test_compute_fields(tmp_path: Path):
     conn.close()
 
 
-def test_compute_fields_csbid_format(tmp_path: Path):
+def test_compute_fields_csbid_format(tmp_path: Path) -> None:
     """CSBID should be STATEFIPS + CSBYEARS + zero-padded national_oid."""
     prep_dir = tmp_path / "prep"
     prep_dir.mkdir()
@@ -136,7 +136,7 @@ def _make_national_parquet(path: Path, n: int = 3, statefips: str = "17") -> Pat
     return path
 
 
-def test_export_state(tmp_path: Path):
+def test_export_state(tmp_path: Path) -> None:
     """_export_state should produce a GeoParquet file for the state."""
     national_path = tmp_path / "national.parquet"
     _make_national_parquet(national_path, n=3, statefips="17")
@@ -160,7 +160,7 @@ def test_export_state(tmp_path: Path):
     assert table.num_rows == 3
 
 
-def test_export_state_no_data(tmp_path: Path):
+def test_export_state_no_data(tmp_path: Path) -> None:
     """_export_state with non-matching FIPS should skip."""
     national_path = tmp_path / "national.parquet"
     _make_national_parquet(national_path, n=3, statefips="17")
@@ -178,7 +178,7 @@ def test_export_state_no_data(tmp_path: Path):
     assert "Skipped" in result
 
 
-def test_run_distribute(tmp_path: Path):
+def test_run_distribute(tmp_path: Path) -> None:
     """Full run_distribute with small synthetic data."""
     prep_dir = tmp_path / "prep"
     prep_dir.mkdir()

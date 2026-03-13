@@ -15,7 +15,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 
-def test_write_geoparquet(tmp_path: Path):
+def test_write_geoparquet(tmp_path: Path) -> None:
     geom = to_wkb(Point(100, 200))
     table = pa.table(
         {
@@ -33,7 +33,7 @@ def test_write_geoparquet(tmp_path: Path):
     assert geo["columns"]["geometry"]["encoding"] == "WKB"
 
 
-def test_write_geoparquet_roundtrip(tmp_path: Path):
+def test_write_geoparquet_roundtrip(tmp_path: Path) -> None:
     geom = to_wkb(Point(100, 200))
     table = pa.table(
         {
