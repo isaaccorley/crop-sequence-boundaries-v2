@@ -9,13 +9,13 @@ global:
 
 paths:
   # Root output directory for all pipeline artifacts
-  output: data/csb/output
+  output: data/output
   # National CDL rasters: {national_cdl}/{year}/{year}_30m_cdls.tif
-  national_cdl: data/csb/input/national_cdl
+  national_cdl: data/input/national_cdl
   # County/ASD boundary file (GeoParquet or Shapefile)
-  boundaries: data/csb/input/boundaries/US48_ASD_CNTY_Albers.parquet
+  boundaries: data/input/boundaries/US48_ASD_CNTY_Albers.parquet
 
-create:
+polygonize:
   # Polygon elimination area thresholds (sq meters, ascending)
   eliminate_thresholds: [100, 1000, 10000]
   # Minimum polygon area to keep (sq meters)

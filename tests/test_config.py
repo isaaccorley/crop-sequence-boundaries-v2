@@ -23,7 +23,7 @@ def test_load_config(default_config_path: Path) -> None:
 
 
 def test_config_sections(default_config: dict) -> None:
-    for section in ("global", "paths", "create"):
+    for section in ("global", "paths", "polygonize"):
         assert section in default_config
 
 

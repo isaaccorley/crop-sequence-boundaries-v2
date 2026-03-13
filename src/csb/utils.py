@@ -4,23 +4,21 @@ from __future__ import annotations
 
 import logging
 import multiprocessing
-from collections import defaultdict
 from concurrent.futures import ProcessPoolExecutor
 from typing import TYPE_CHECKING, Any
 
-import numpy as np
 import pyarrow as pa
-import shapely
+import sedonadb
 from contourrs import shapes_arrow
 from exactextract import exact_extract
-from shapely import from_wkb, make_valid, to_wkb
-from shapely.strtree import STRtree
 
 if TYPE_CHECKING:
     from collections.abc import Callable
     from pathlib import Path
 
     import geopandas as gpd
+    import numpy as np
+    from sedonadb.context import SedonaContext
 
 logger = logging.getLogger(__name__)
 
@@ -59,107 +57,119 @@ def polygonize(
     )
 
 
+def make_sedona() -> SedonaContext:
+    """Create a fresh SedonaDB context."""
+    return sedonadb.connect()
+
+
 def eliminate_small_polygons(
-    geometries: list[Any],
-    values: list[Any],
+    table: pa.Table,
     thresholds: list[float],
-) -> tuple[list[Any], list[Any]]:
+    sd: SedonaContext,
+) -> pa.Table:
     """Iteratively merge small polygons into the neighbor with the longest shared boundary.
 
     Mirrors arcpy.management.Eliminate(selection="LENGTH"). For each threshold
-    (ascending), polygons with area <= threshold are dissolved into their
-    neighbor that shares the longest boundary segment.
+    (ascending), polygons with area <= threshold are dissolved into the neighbor
+    that shares the longest boundary segment.
 
-    Uses vectorized shapely 2.x array operations to avoid per-polygon Python loops.
+    SQL implementation via SedonaDB — no Shapely/copy overhead.
 
     Args:
-        geometries: List of shapely geometries.
-        values: Parallel list of values per polygon.
+        table: Arrow table with 'geometry' (WKB binary) and 'effective_count' columns.
         thresholds: Area thresholds in ascending order (sq meters).
+        sd: SedonaDB context (from sedonadb.connect()).
 
     Returns:
-        (filtered_geometries, filtered_values) after elimination.
+        Arrow table with the same schema after elimination.
     """
-    geoms_arr = np.array(geometries)
-    vals_arr = np.array(values)
+    # Strip geoarrow extension metadata so SedonaDB accepts ST_GeomFromWKB
+    geom_idx = table.schema.get_field_index("geometry")
+    table = table.set_column(geom_idx, "geometry", table.column("geometry").cast(pa.binary()))
+
+    # Stable row-id required for self-join
+    table = table.append_column("_rid", pa.array(range(table.num_rows), pa.int64()))
 
     for threshold in thresholds:
-        if len(geoms_arr) == 0:
+        if table.num_rows == 0:
             break
 
-        areas = shapely.area(geoms_arr)
-        small_mask = areas <= threshold
-        if not small_mask.any():
-            continue
+        sd.create_data_frame(table).to_view("_elim", overwrite=True)
+        result = pa.RecordBatchReader.from_stream(
+            sd.sql(f"""
+                WITH
+                src AS (
+                    SELECT _rid,
+                           ST_GeomFromWKB(geometry) AS geom,
+                           effective_count,
+                           ST_Area(ST_GeomFromWKB(geometry)) AS area_sqm
+                    FROM _elim
+                ),
+                small AS (SELECT _rid, geom FROM src WHERE area_sqm <= {threshold}),
+                large AS (SELECT _rid, geom, effective_count FROM src WHERE area_sqm > {threshold}),
+                -- touching (small, large) pairs with shared boundary length
+                pairs AS (
+                    SELECT
+                        s._rid AS small_rid,
+                        l._rid AS large_rid,
+                        ST_Length(
+                            ST_Intersection(ST_Boundary(s.geom), ST_Boundary(l.geom))
+                        ) AS shared_len
+                    FROM small s, large l
+                    WHERE ST_Touches(s.geom, l.geom)
+                ),
+                -- best large neighbor per small (longest shared boundary)
+                best AS (
+                    SELECT small_rid, large_rid
+                    FROM (
+                        SELECT *,
+                               ROW_NUMBER() OVER (
+                                   PARTITION BY small_rid ORDER BY shared_len DESC
+                               ) AS rn
+                        FROM pairs
+                    ) t
+                    WHERE rn = 1
+                ),
+                -- all pieces to union per merge target: the large + its assigned smalls
+                pieces AS (
+                    SELECT b.large_rid, s.geom FROM best b JOIN small s ON s._rid = b.small_rid
+                    UNION ALL
+                    SELECT b.large_rid, l.geom FROM best b JOIN large l ON l._rid = b.large_rid
+                ),
+                -- union each group and repair geometry
+                merged AS (
+                    SELECT large_rid AS _rid,
+                           ST_MakeValid(ST_Union_Agg(geom)) AS geom
+                    FROM pieces
+                    GROUP BY large_rid
+                ),
+                -- large polygons with no assigned smalls pass through unchanged
+                untouched AS (
+                    SELECT _rid, geom FROM large
+                    WHERE _rid NOT IN (SELECT large_rid FROM best)
+                ),
+                combined AS (
+                    SELECT _rid, geom FROM merged
+                    UNION ALL
+                    SELECT _rid, geom FROM untouched
+                )
+                -- restore effective_count from the large polygon record
+                SELECT c._rid, ST_AsWKB(c.geom) AS geometry, l.effective_count
+                FROM combined c
+                JOIN large l ON l._rid = c._rid
+            """)
+        ).read_all()
+        # Cast geometry from binary_view → binary for DuckDB compatibility downstream
+        geom_idx = result.schema.get_field_index("geometry")
+        result = result.set_column(
+            geom_idx, "geometry", result.column("geometry").cast(pa.binary())
+        )
+        table = result
 
-        small_idx = np.where(small_mask)[0]
-        large_mask = ~small_mask
-
-        tree = STRtree(geoms_arr)
-        # Vectorized: query all small polygons at once → (query_pos, result_pos) pairs
-        q_pos, r_pos = tree.query(geoms_arr[small_idx], predicate="touches")
-
-        # Only keep pairs where the result is a large polygon
-        large_result = large_mask[r_pos]
-        q_pos = q_pos[large_result]
-        r_pos = r_pos[large_result]
-
-        if len(q_pos) == 0:
-            # No mergeable small polygons; just drop them
-            keep = large_mask
-            geoms_arr = geoms_arr[keep]
-            vals_arr = vals_arr[keep]
-            continue
-
-        # Vectorized boundary intersection lengths
-        small_geom_idx = small_idx[q_pos]  # original indices of small polygons
-        boundaries_small = shapely.boundary(geoms_arr[small_geom_idx])
-        boundaries_large = shapely.boundary(geoms_arr[r_pos])
-        shared_lengths = shapely.length(shapely.intersection(boundaries_small, boundaries_large))
-
-        # For each small polygon, find the large neighbor with the longest shared boundary
-        merge_map: dict[int, tuple[int, float]] = {}
-        for qi, ri, length in zip(small_geom_idx, r_pos, shared_lengths, strict=False):
-            if length > merge_map.get(qi, (-1, 0.0))[1]:
-                merge_map[qi] = (int(ri), float(length))
-
-        # Apply merges: group all smalls per large target → one unary_union each
-        groups: dict[int, list[int]] = defaultdict(list)
-        for small_i, (large_i, _) in merge_map.items():
-            groups[large_i].append(small_i)
-
-        for large_i, small_indices in groups.items():
-            pieces = [geoms_arr[large_i]] + [geoms_arr[j] for j in small_indices]
-            geoms_arr[large_i] = make_valid(shapely.unary_union(pieces))
-
-        # Drop merged smalls and any unmerged smalls that had no valid large neighbor
-        keep = np.ones(len(geoms_arr), dtype=bool)
-        for small_i in merge_map:  # keys are small polygon indices
-            keep[small_i] = False
-        for i in small_idx:
-            if i not in merge_map:
-                keep[i] = False
-        geoms_arr = geoms_arr[keep]
-        vals_arr = vals_arr[keep]
-
-    return list(geoms_arr), list(vals_arr)
-
-
-def geometries_to_arrow(
-    geometries: list[Any],
-    columns: dict[str, list[Any]] | None = None,
-) -> pa.Table:
-    """Convert shapely geometries + optional columns to an Arrow table with WKB geometry."""
-    wkb_geoms = [to_wkb(g) for g in geometries]
-    data: dict[str, Any] = {"geometry": pa.array(wkb_geoms, type=pa.binary())}
-    if columns:
-        data.update(columns)
-    return pa.table(data)
-
-
-def arrow_to_geometries(table: pa.Table, column: str = "geometry") -> list[Any]:
-    """Extract shapely geometries from a WKB column in an Arrow table."""
-    return [from_wkb(g.as_py()) for g in table.column(column)]
+    rid_idx = table.schema.get_field_index("_rid")
+    if rid_idx >= 0:
+        table = table.remove_column(rid_idx)
+    return table
 
 
 # ---------------------------------------------------------------------------

@@ -1,4 +1,4 @@
-"""Tests for csb.create — process_area and run_create."""
+"""Tests for csb.polygonize — process_tile and run_polygonize."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ import numpy as np
 import rasterio
 from rasterio.transform import from_bounds
 
-from csb.create import _tile_windows, process_area, run_create
+from csb.polygonize import _tile_windows, process_tile, run_polygonize
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -46,7 +46,7 @@ def _make_config(national_cdl_dir: Path) -> dict[str, Any]:
     return {
         "global": {"cpu_fraction": 0.5, "min_cropland_years": 1},
         "paths": {"national_cdl": str(national_cdl_dir)},
-        "create": {
+        "polygonize": {
             "eliminate_thresholds": [100],
             "min_polygon_area": 1.0,
             "simplify_tolerance": 10.0,
@@ -68,7 +68,7 @@ def test_tile_windows_non_divisible() -> None:
     assert len(tiles) == 6  # 3 cols x 2 rows
 
 
-def test_process_area(tmp_path: Path) -> None:
+def test_process_tile(tmp_path: Path) -> None:
     cdl_dir = tmp_path / "cdl"
     output_dir = tmp_path / "output"
     output_dir.mkdir()
@@ -78,7 +78,6 @@ def test_process_area(tmp_path: Path) -> None:
 
     cfg = _make_config(cdl_dir)
 
-    # Window covering the whole raster
     window_dict = {"col_off": 0, "row_off": 0, "width": size, "height": size}
     params = {
         "config": cfg,
@@ -88,14 +87,14 @@ def test_process_area(tmp_path: Path) -> None:
         "window": window_dict,
     }
 
-    result = process_area(("A0", params))
+    result = process_tile(("A0", params))
     assert isinstance(result, str)
     assert "A0" in result
     assert "Finished" in result or "Skipped" in result
 
 
-def test_process_area_no_valid_pixels(tmp_path: Path) -> None:
-    """Area with all-zero rasters should be skipped."""
+def test_process_tile_no_valid_pixels(tmp_path: Path) -> None:
+    """Tile with all-zero rasters should be skipped."""
     cdl_dir = tmp_path / "cdl"
     output_dir = tmp_path / "output"
     output_dir.mkdir()
@@ -129,12 +128,12 @@ def test_process_area_no_valid_pixels(tmp_path: Path) -> None:
         "window": window_dict,
     }
 
-    result = process_area(("Z1", params))
+    result = process_tile(("Z1", params))
     assert "Skipped" in result
 
 
-def test_process_area_all_barren(tmp_path: Path) -> None:
-    """Area with all barren (45) pixels — effective count = 0 after subtraction."""
+def test_process_tile_all_barren(tmp_path: Path) -> None:
+    """Tile with all barren (45) pixels — effective count = 0 after subtraction."""
     cdl_dir = tmp_path / "cdl"
     output_dir = tmp_path / "output"
     output_dir.mkdir()
@@ -168,11 +167,11 @@ def test_process_area_all_barren(tmp_path: Path) -> None:
         "window": window_dict,
     }
 
-    result = process_area(("B1", params))
+    result = process_tile(("B1", params))
     assert "Skipped" in result
 
 
-def test_run_create(tmp_path: Path) -> None:
+def test_run_polygonize(tmp_path: Path) -> None:
     cdl_dir = tmp_path / "cdl"
     output_dir = tmp_path / "output"
     years = (2020, 2021)
@@ -183,12 +182,12 @@ def test_run_create(tmp_path: Path) -> None:
     with patch(
         "csb.utils.parallel_map", side_effect=lambda fn, items, **kw: [fn(i) for i in items]
     ):
-        result_dir = run_create(cfg, 2020, 2021, output_dir)
+        result_dir = run_polygonize(cfg, 2020, 2021, output_dir)
 
     assert result_dir.exists()
 
 
-def test_run_create_skips_done(tmp_path: Path) -> None:
+def test_run_polygonize_skips_done(tmp_path: Path) -> None:
     """Already-processed tiles should be skipped."""
     cdl_dir = tmp_path / "cdl"
     output_dir = tmp_path / "output"
@@ -196,15 +195,14 @@ def test_run_create_skips_done(tmp_path: Path) -> None:
     years = (2020, 2021)
     _make_national_cdl(cdl_dir, years=years, size=10)
 
-    # Create a dummy output so it looks "done"
     (output_dir / "A0.parquet").touch()
 
     cfg = _make_config(cdl_dir)
-    result_dir = run_create(cfg, 2020, 2021, output_dir)
+    result_dir = run_polygonize(cfg, 2020, 2021, output_dir)
     assert result_dir == output_dir
 
 
-def test_run_create_single_area(tmp_path: Path) -> None:
+def test_run_polygonize_single_area(tmp_path: Path) -> None:
     cdl_dir = tmp_path / "cdl"
     output_dir = tmp_path / "output"
     years = (2020, 2021)
@@ -215,13 +213,13 @@ def test_run_create_single_area(tmp_path: Path) -> None:
     with patch(
         "csb.utils.parallel_map", side_effect=lambda fn, items, **kw: [fn(i) for i in items]
     ):
-        result_dir = run_create(cfg, 2020, 2021, output_dir, area="A0")
+        result_dir = run_polygonize(cfg, 2020, 2021, output_dir, area="A0")
 
     parquets = list(result_dir.glob("*.parquet"))
     assert all("A0" in p.name for p in parquets)
 
 
-def test_process_area_high_min_cropland(tmp_path: Path) -> None:
+def test_process_tile_high_min_cropland(tmp_path: Path) -> None:
     """With min_cropland_years very high, all polygons should be filtered."""
     cdl_dir = tmp_path / "cdl"
     output_dir = tmp_path / "output"
@@ -240,5 +238,5 @@ def test_process_area_high_min_cropland(tmp_path: Path) -> None:
         "window": window_dict,
     }
 
-    result = process_area(("F1", params))
+    result = process_tile(("F1", params))
     assert "Skipped" in result or "Finished" in result

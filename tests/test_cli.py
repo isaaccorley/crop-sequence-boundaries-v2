@@ -14,25 +14,18 @@ def test_cli_help() -> None:
     assert "Crop Sequence Boundaries" in result.output
 
 
-def test_create_help() -> None:
+def test_polygonize_help() -> None:
     runner = CliRunner()
-    result = runner.invoke(main, ["create", "--help"])
+    result = runner.invoke(main, ["polygonize", "--help"])
     assert result.exit_code == 0
     assert "start_year" in result.output.lower()
 
 
-def test_prep_help() -> None:
+def test_postprocess_help() -> None:
     runner = CliRunner()
-    result = runner.invoke(main, ["prep", "--help"])
+    result = runner.invoke(main, ["postprocess", "--help"])
     assert result.exit_code == 0
-    assert "--create-dir" in result.output
-
-
-def test_distribute_help() -> None:
-    runner = CliRunner()
-    result = runner.invoke(main, ["distribute", "--help"])
-    assert result.exit_code == 0
-    assert "--prep-dir" in result.output
+    assert "--polygonize-dir" in result.output
 
 
 def test_run_all_help() -> None:

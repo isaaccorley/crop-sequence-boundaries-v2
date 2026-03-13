@@ -1,4 +1,4 @@
-"""Stage 1: CREATE — Combine multi-year CDL rasters into crop sequence boundary polygons.
+"""Stage 1: POLYGONIZE — Combine multi-year CDL rasters into crop sequence boundary polygons.
 
 Mirrors the USDA original algorithm (ArcGIS Combine):
 
@@ -36,9 +36,8 @@ from rasterio.windows import Window
 from csb.config import BARREN_CODE, CDL_CROP_MAX, CDL_PIXEL_AREA_SQM
 from csb.io import write_geoparquet
 from csb.utils import (
-    arrow_to_geometries,
     eliminate_small_polygons,
-    geometries_to_arrow,
+    make_sedona,
     polygonize,
 )
 
@@ -89,8 +88,6 @@ def _combine_years_windowed(
         effective_per_combo: 1D int16 array — (COUNT0 - COUNT45) for each combo ID
         transform: Affine transform for this window
     """
-    # Incrementally pack each year's CDL into seq_ids to avoid holding all
-    # N raster arrays in memory simultaneously.
     base = np.int64(300)
     seq_ids: np.ndarray | None = None
     transform = None
@@ -99,24 +96,21 @@ def _combine_years_windowed(
         arr, t = _read_window(cdl_path, window)
         if transform is None:
             transform = t
-        # Reclassify non-cropland pixels (CDL > CDL_CROP_MAX) to BARREN_CODE.
         arr = arr.astype(np.int64)
         arr = np.where((arr > CDL_CROP_MAX) & (arr != 0), BARREN_CODE, arr)
         if seq_ids is None:
-            seq_ids = arr  # first year: just the array itself
+            seq_ids = arr
         else:
             seq_ids += arr * (base**i)
 
     assert seq_ids is not None
     shape = seq_ids.shape
 
-    # Assign compact sequential IDs (0, 1, 2, ...) to each unique sequence
     unique_seqs, flat_ids = np.unique(seq_ids.ravel(), return_inverse=True)
     del seq_ids
     combo_raster = flat_ids.reshape(shape).astype(np.int32)
     del flat_ids
 
-    # Compute effective_count per unique sequence
     n_combos = len(unique_seqs)
     count0 = np.zeros(n_combos, dtype=np.int16)
     count45 = np.zeros(n_combos, dtype=np.int16)
@@ -135,10 +129,7 @@ def _combine_years_windowed(
 
 
 def _phase1_polygonize(args: tuple[str, dict[str, Any]]) -> str:
-    """Phase 1: Read CDL windows, combine, polygonize, filter -> intermediate parquet.
-
-    This is the memory-heavy phase (raster I/O + polygonization).
-    """
+    """Phase 1: Read CDL windows, combine, polygonize, filter -> intermediate parquet."""
     area, params = args
     cfg = params["config"]
     start_year: int = params["start_year"]
@@ -153,32 +144,24 @@ def _phase1_polygonize(args: tuple[str, dict[str, Any]]) -> str:
     years = list(range(start_year, end_year + 1))
     t0 = time.perf_counter()
 
-    # 1. Read windows directly from national CDL
     logger.info("%s: Phase 1 - Reading %s years (windowed)", area, len(years))
     combo_raster, effective_per_combo, transform = _combine_years_windowed(
         national_cdl, years, window
     )
 
-    # 2. Mask pixels where effective_count >= 1 for any combo, then polygonize
     effective_map = effective_per_combo[combo_raster]
     mask = effective_map >= 1
     if not mask.any():
         return f"Skipped {area} (no valid pixels)"
 
     logger.info("%s: Polygonizing %s valid pixels", area, int(mask.sum()))
-    table = polygonize(
-        combo_raster,
-        mask=mask,
-        transform=transform,
-        nodata=-1,
-    )
+    table = polygonize(combo_raster, mask=mask, transform=transform, nodata=-1)
     del combo_raster, effective_map, mask
     gc.collect()
 
     if table.num_rows == 0:
         return f"Skipped {area} (no polygons)"
 
-    # 3. DuckDB filter: USDA two-threshold + single-pixel noise removal
     combo_table = pa.table(
         {
             "combo_id": pa.array(
@@ -213,7 +196,6 @@ def _phase1_polygonize(args: tuple[str, dict[str, Any]]) -> str:
     if filtered.num_rows == 0:
         return f"Skipped {area} (all filtered)"
 
-    # 4. Write intermediate parquet
     out_path = intermediate_dir / f"{area}.parquet"
     write_geoparquet(filtered, out_path)
 
@@ -228,47 +210,36 @@ def _phase1_polygonize(args: tuple[str, dict[str, Any]]) -> str:
 
 
 def _phase2_eliminate(args: tuple[str, dict[str, Any]]) -> str:
-    """Phase 2: Eliminate small polygons + simplify -> final parquet.
-
-    This is CPU-bound but uses much less memory than phase 1.
-    """
+    """Phase 2: Eliminate small polygons + simplify -> final parquet."""
     area, params = args
     cfg = params["config"]
     intermediate_dir = Path(params["intermediate_dir"])
     output_dir = Path(params["output_dir"])
 
-    thresholds = cfg["create"]["eliminate_thresholds"]
-    min_area = cfg["create"]["min_polygon_area"]
-    simplify_tol = cfg["create"]["simplify_tolerance"]
+    polygonize_cfg = cfg["polygonize"]
+    thresholds = polygonize_cfg["eliminate_thresholds"]
+    min_area = polygonize_cfg["min_polygon_area"]
+    simplify_tol = polygonize_cfg["simplify_tolerance"]
 
     intermediate_path = intermediate_dir / f"{area}.parquet"
     t0 = time.perf_counter()
 
-    # 1. Read intermediate parquet
     import pyarrow.parquet as pq
 
     filtered = pq.read_table(intermediate_path)
 
-    # 2. Eliminate small polygons
-    geoms = arrow_to_geometries(filtered)
-    vals = filtered.column("effective_count").to_pylist()
-    del filtered
+    logger.info("%s: Phase 2 - Eliminating small polygons (%s input)", area, filtered.num_rows)
+    filtered = eliminate_small_polygons(filtered, thresholds, make_sedona())
 
-    logger.info("%s: Phase 2 - Eliminating small polygons (%s input)", area, len(geoms))
-    geoms, vals = eliminate_small_polygons(geoms, vals, thresholds)
-
-    if not geoms:
+    if filtered.num_rows == 0:
         return f"Skipped {area} (all eliminated)"
 
-    # 3. Simplify + min-area filter in DuckDB
-    logger.info("%s: Simplifying %s polygons (DuckDB)", area, len(geoms))
-    intermediate = geometries_to_arrow(geoms, columns={"effective_count": vals})
-    del geoms, vals
-
+    logger.info("%s: Simplifying %s polygons", area, filtered.num_rows)
     conn = duckdb.connect()
     conn.install_extension("spatial")
     conn.load_extension("spatial")
-    conn.register("elim", intermediate)
+    conn.register("elim", filtered)
+    del filtered
     out_table = (
         conn.execute(f"""
         WITH simplified AS (
@@ -289,7 +260,6 @@ def _phase2_eliminate(args: tuple[str, dict[str, Any]]) -> str:
     if out_table.num_rows == 0:
         return f"Skipped {area} (all below min area)"
 
-    # 4. Write final GeoParquet
     out_path = output_dir / f"{area}.parquet"
     write_geoparquet(out_table, out_path)
 
@@ -299,15 +269,15 @@ def _phase2_eliminate(args: tuple[str, dict[str, Any]]) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Legacy single-function entry point (used by tests)
+# Legacy single-tile entry point (used by tests)
 # ---------------------------------------------------------------------------
 
 
-def process_area(args: tuple[str, dict[str, Any]]) -> str:
-    """Process a single window tile through the full CREATE pipeline (both phases).
+def process_tile(args: tuple[str, dict[str, Any]]) -> str:
+    """Process a single window tile through the full POLYGONIZE pipeline (both phases).
 
     Args:
-        args: Tuple of (area_name, params_dict). params_dict must contain
+        args: Tuple of (tile_name, params_dict). params_dict must contain
               'window' (serialized as dict), 'config', 'start_year',
               'end_year', 'output_dir'.
 
@@ -324,39 +294,32 @@ def process_area(args: tuple[str, dict[str, Any]]) -> str:
 
     national_cdl = Path(cfg["paths"]["national_cdl"])
     min_cropland = cfg["global"]["min_cropland_years"]
-    thresholds = cfg["create"]["eliminate_thresholds"]
-    min_area = cfg["create"]["min_polygon_area"]
-    simplify_tol = cfg["create"]["simplify_tolerance"]
+    polygonize_cfg = cfg["polygonize"]
+    thresholds = polygonize_cfg["eliminate_thresholds"]
+    min_area = polygonize_cfg["min_polygon_area"]
+    simplify_tol = polygonize_cfg["simplify_tolerance"]
 
     years = list(range(start_year, end_year + 1))
     t0 = time.perf_counter()
 
-    # 1. Read windows directly from national CDL (no split stage)
     logger.info("%s: Reading %s years (windowed)", area, len(years))
     combo_raster, effective_per_combo, transform = _combine_years_windowed(
         national_cdl, years, window
     )
 
-    # 2. Mask pixels where effective_count >= 1 for any combo, then polygonize combo IDs
-    effective_map = effective_per_combo[combo_raster]  # broadcast to 2D
+    effective_map = effective_per_combo[combo_raster]
     mask = effective_map >= 1
     if not mask.any():
         return f"Skipped {area} (no valid pixels)"
 
     logger.info("%s: Polygonizing %s valid pixels", area, int(mask.sum()))
-    table = polygonize(
-        combo_raster,
-        mask=mask,
-        transform=transform,
-        nodata=-1,
-    )
-    del combo_raster, effective_map, mask  # free raster memory before DuckDB
+    table = polygonize(combo_raster, mask=mask, transform=transform, nodata=-1)
+    del combo_raster, effective_map, mask
     gc.collect()
 
     if table.num_rows == 0:
         return f"Skipped {area} (no polygons)"
 
-    # 3. Join effective_count per combo; apply USDA two-threshold filter
     combo_table = pa.table(
         {
             "combo_id": pa.array(
@@ -389,22 +352,18 @@ def process_area(args: tuple[str, dict[str, Any]]) -> str:
         conn.close()
         return f"Skipped {area} (all filtered)"
 
-    # 4. Eliminate small polygons (inherently iterative — stays in shapely)
-    geoms = arrow_to_geometries(filtered)
-    vals = filtered.column("effective_count").to_pylist()
-    del table, combo_table, filtered  # free Arrow/DuckDB intermediates
+    del table, combo_table
 
-    logger.info("%s: Eliminating small polygons (%s input)", area, len(geoms))
-    geoms, vals = eliminate_small_polygons(geoms, vals, thresholds)
+    logger.info("%s: Eliminating small polygons (%s input)", area, filtered.num_rows)
+    filtered = eliminate_small_polygons(filtered, thresholds, make_sedona())
 
-    if not geoms:
+    if filtered.num_rows == 0:
         conn.close()
         return f"Skipped {area} (all eliminated)"
 
-    # 5. Simplify + min-area filter in DuckDB
-    logger.info("%s: Simplifying %s polygons (DuckDB)", area, len(geoms))
-    intermediate = geometries_to_arrow(geoms, columns={"effective_count": vals})
-    conn.register("elim", intermediate)
+    logger.info("%s: Simplifying %s polygons", area, filtered.num_rows)
+    conn.register("elim", filtered)
+    del filtered
     out_table = (
         conn.execute(f"""
         WITH simplified AS (
@@ -425,7 +384,6 @@ def process_area(args: tuple[str, dict[str, Any]]) -> str:
     if out_table.num_rows == 0:
         return f"Skipped {area} (all below min area)"
 
-    # 6. Write GeoParquet
     out_path = output_dir / f"{area}.parquet"
     write_geoparquet(out_table, out_path)
 
@@ -434,14 +392,14 @@ def process_area(args: tuple[str, dict[str, Any]]) -> str:
     return f"Finished {area} ({out_table.num_rows} polygons, {elapsed:.1f} min)"
 
 
-def run_create(
+def run_polygonize(
     cfg: dict[str, Any],
     start_year: int,
     end_year: int,
     output_dir: str | Path,
     area: str | None = None,
 ) -> Path:
-    """Run the CREATE stage for all (or one) window tile(s).
+    """Run the POLYGONIZE stage for all (or one) window tile(s).
 
     Uses a two-phase approach for memory efficiency:
     - Phase 1 (few workers): raster I/O + polygonize + DuckDB filter
@@ -470,43 +428,37 @@ def run_create(
     intermediate_dir.mkdir(parents=True, exist_ok=True)
 
     national_cdl = Path(cfg["paths"]["national_cdl"])
-    tile_size = cfg.get("create", {}).get("tile_size", DEFAULT_TILE_SIZE)
-    create_cfg = cfg.get("create", {})
+    polygonize_cfg = cfg.get("polygonize", {})
+    tile_size = polygonize_cfg.get("tile_size", DEFAULT_TILE_SIZE)
 
-    # Worker counts: phase1 (memory-heavy) vs phase2 (CPU-bound)
     default_workers = worker_count(cfg["global"]["cpu_fraction"])
-    phase1_workers = create_cfg.get("phase1_workers", max(1, default_workers // 4))
+    phase1_workers = polygonize_cfg.get("phase1_workers", max(1, default_workers // 4))
     phase2_workers = (
-        create_cfg.get("phase2_workers") or create_cfg.get("max_workers") or default_workers
+        polygonize_cfg.get("phase2_workers") or polygonize_cfg.get("max_workers") or default_workers
     )
 
-    # Discover raster dimensions from the first year
     first_cdl = national_cdl / str(start_year) / f"{start_year}_30m_cdls.tif"
     with rasterio.open(first_cdl) as src:
         raster_width, raster_height = src.width, src.height
 
-    # Generate windows
     all_tiles = _tile_windows(raster_width, raster_height, tile_size)
     if area:
         all_tiles = [(name, win) for name, win in all_tiles if name == area]
 
     tile_names = [name for name, _ in all_tiles]
 
-    # Skip already-done areas (final output)
     done = {f.stem for f in output_dir.glob("*.parquet")}
     phase1_done = {f.stem for f in intermediate_dir.glob("*.parquet")}
 
-    # Phase 1: tiles not yet in intermediate or final
     phase1_remaining = [
         (name, win) for name, win in all_tiles if name not in done and name not in phase1_done
     ]
-    # Phase 2: tiles in intermediate but not in final
     phase2_pending = [
         (name, win) for name, win in all_tiles if name in phase1_done and name not in done
     ]
 
     console.print(
-        f"CREATE: {len(tile_names)} tiles, {start_year}-{end_year}\n"
+        f"POLYGONIZE: {len(tile_names)} tiles, {start_year}-{end_year}\n"
         f"  Phase 1 (polygonize): {len(phase1_remaining)} remaining, {phase1_workers} workers\n"
         f"  Phase 2 (eliminate):  {len(phase2_pending)} pending + new, {phase2_workers} workers\n"
         f"  Already done:         {len(done)}"
@@ -516,7 +468,6 @@ def run_create(
         console.print("[green]All tiles already processed.")
         return output_dir
 
-    # --- Phase 1: memory-heavy polygonization ---
     if phase1_remaining:
         params = {
             "config": cfg,
@@ -552,8 +503,6 @@ def run_create(
             f"{len(p1_skipped)} skipped"
         )
 
-    # --- Phase 2: CPU-bound eliminate + simplify ---
-    # Collect all intermediate tiles that need phase 2
     phase2_tiles = {f.stem for f in intermediate_dir.glob("*.parquet")} - done
     phase2_work = [(name, win) for name, win in all_tiles if name in phase2_tiles]
 
@@ -574,11 +523,10 @@ def run_create(
         p2_skipped = [r for r in p2_results if r.startswith("Skipped")]
         total_polys = sum(int(r.split("(")[1].split()[0]) for r in finished if "polygons" in r)
         console.print(
-            f"[bold green]CREATE complete: {len(finished)} tiles, "
+            f"[bold green]POLYGONIZE complete: {len(finished)} tiles, "
             f"{total_polys:,} polygons ({len(p2_skipped)} skipped)"
         )
 
-    # Clean up intermediate directory
     shutil.rmtree(intermediate_dir, ignore_errors=True)
 
     return output_dir

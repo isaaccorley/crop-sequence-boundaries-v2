@@ -1,4 +1,5 @@
 data/
+crop-sequence-boundaries/
 
 __pycache__/
 *.py[codz]

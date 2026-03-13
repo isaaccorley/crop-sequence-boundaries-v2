@@ -1,4 +1,4 @@
-"""Tests for csb.create stage — windowed reads and combine logic."""
+"""Tests for csb.polygonize — windowed reads and combine logic."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from rasterio.transform import from_bounds
 from rasterio.windows import Window
 
 from csb.config import BARREN_CODE
-from csb.create import _combine_years_windowed, _read_window, _tile_windows
+from csb.polygonize import _combine_years_windowed, _read_window, _tile_windows
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -61,7 +61,6 @@ def test_combine_years_windowed(tmp_path: Path) -> None:
     assert combo_raster.dtype == np.int32
     assert effective_per_combo.ndim == 1
     assert effective_per_combo.dtype == np.int16
-    # combo IDs are 0-based indices into effective_per_combo
     assert combo_raster.min() >= 0
     assert combo_raster.max() < len(effective_per_combo)
 
@@ -80,19 +79,16 @@ def test_combine_years_counts_correctly(tmp_path: Path) -> None:
         "nodata": 0,
     }
 
-    # Year 1: all value=1 (cropland)
     year1_dir = tmp_path / "2020"
     year1_dir.mkdir()
     with rasterio.open(year1_dir / "2020_30m_cdls.tif", "w", **profile) as dst:
         dst.write(np.ones((5, 5), dtype=np.int32), 1)
 
-    # Year 2: all value=45 (barren)
     year2_dir = tmp_path / "2021"
     year2_dir.mkdir()
     with rasterio.open(year2_dir / "2021_30m_cdls.tif", "w", **profile) as dst:
         dst.write(np.full((5, 5), BARREN_CODE, dtype=np.int32), 1)
 
-    # Year 3: all zeros (no data)
     year3_dir = tmp_path / "2022"
     year3_dir.mkdir()
     with rasterio.open(year3_dir / "2022_30m_cdls.tif", "w", **profile) as dst:
@@ -103,11 +99,8 @@ def test_combine_years_counts_correctly(tmp_path: Path) -> None:
         tmp_path, [2020, 2021, 2022], window
     )
 
-    # All pixels have the same sequence (1, 45, 0) → one unique combo
     assert len(effective_per_combo) == 1
-    # COUNT0=2 (year1 + year2 > 0), COUNT45=1 (year2==45) → effective=1
     assert effective_per_combo[0] == 1
-    # All pixels map to combo 0
     np.testing.assert_array_equal(combo_raster, np.zeros((5, 5), dtype=np.int32))
 
 
