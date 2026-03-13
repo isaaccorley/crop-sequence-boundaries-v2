@@ -9,11 +9,11 @@ global:
 
 paths:
   # Root output directory for all pipeline artifacts
-  output: /data/csb/output
+  output: data/csb/output
   # National CDL rasters: {national_cdl}/{year}/{year}_30m_cdls.tif
-  national_cdl: /data/csb/input/national_cdl
+  national_cdl: data/csb/input/national_cdl
   # County/ASD boundary file (GeoParquet or Shapefile)
-  boundaries: /data/csb/input/boundaries/US48_ASD_CNTY_Albers.parquet
+  boundaries: data/csb/input/boundaries/US48_ASD_CNTY_Albers.parquet
 
 create:
   # Polygon elimination area thresholds (sq meters, ascending)
