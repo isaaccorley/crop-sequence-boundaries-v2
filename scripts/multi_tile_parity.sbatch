@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=csb-parity
-#SBATCH --partition=cpu_amd
+#SBATCH --partition=cpu
 #SBATCH --account=bgtj-tgirails
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1

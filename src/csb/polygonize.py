@@ -89,10 +89,15 @@ def _combine_years_windowed(
             (combo, year) — non-cropland already remapped to BARREN_CODE.
         transform: rasterio Affine for this window.
     """
-    # Memory budget: only seq_ids is materialized as int64 (one HxW buffer).
-    # Per-year CDL reads stay uint8 → cast to int64 only inline during the
-    # multiply-add. This avoids an 8x transient copy at peak.
-    base = np.int64(300)
+    # Pack each year's CDL byte (0-254) into a separate byte slot of a uint64.
+    # 8 years * 1 byte = 64 bits, fits exactly. Replaces a base-300 int64
+    # multiply-add encoding that overflowed: 254 * 300**7 = 5.55e19 exceeds
+    # int64 max (9.22e18), corrupting unique_seqs decoding for any pixel
+    # whose year-7 CDL value > 42. Bit-packing is also faster (single
+    # bitwise_or vs. multiply-add).
+    if len(years) > 8:
+        msg = f"bit-packed combine supports up to 8 years (got {len(years)})"
+        raise ValueError(msg)
     seq_ids: np.ndarray | None = None
     transform = None
     barren = np.uint8(BARREN_CODE)
@@ -107,17 +112,16 @@ def _combine_years_windowed(
         if non_crop.any():
             arr = arr.copy()
             arr[non_crop] = barren
+        shifted = arr.astype(np.uint64) << np.uint64(8 * i)
         if seq_ids is None:
-            seq_ids = arr.astype(np.int64)
+            seq_ids = shifted
         else:
-            np.add(seq_ids, arr.astype(np.int64) * (base**i), out=seq_ids)
+            np.bitwise_or(seq_ids, shifted, out=seq_ids)
 
     assert seq_ids is not None
     shape = seq_ids.shape
     unique_seqs, flat_ids = np.unique(seq_ids.ravel(), return_inverse=True)
     del seq_ids
-    # return_inverse is platform intp (int64 on 64-bit). Drop to int32 since
-    # n_combos < 2^31 always for any tile we'd run.
     combo_raster = flat_ids.astype(np.int32, copy=False).reshape(shape)
     del flat_ids
 
@@ -127,8 +131,8 @@ def _combine_years_windowed(
     count0 = np.zeros(n_combos, dtype=np.int16)
     count_barren = np.zeros(n_combos, dtype=np.int16)
     for i in range(n_years):
-        yr_vals = (unique_seqs // int(base**i)) % int(base)
-        cdl_per_combo_year[:, i] = yr_vals.astype(np.uint8)
+        yr_vals = ((unique_seqs >> np.uint64(8 * i)) & np.uint64(0xFF)).astype(np.uint8)
+        cdl_per_combo_year[:, i] = yr_vals
         count0 += (yr_vals > 0).astype(np.int16)
         count_barren += (yr_vals == BARREN_CODE).astype(np.int16)
     effective_per_combo = (count0 - count_barren).astype(np.int16)
