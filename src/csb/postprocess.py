@@ -266,8 +266,15 @@ def run_postprocess(
     # --- Distribute phase ---
     csb_tag = f"{str(start_year)[2:]}{str(end_year)[2:]}"
     t0 = time.perf_counter()
-    console.print("Merging tiles into national dataset...")
 
+    # Empty-input guard: ocean/forest tiles legitimately produce zero polygons.
+    # The pipeline shouldn't crash; emit empty national output and exit clean.
+    enriched = sorted(enrich_dir.glob("*.parquet"))
+    if not enriched:
+        console.print("[yellow]No enriched tiles — emitting empty national parquet.")
+        return output_dir
+
+    console.print("Merging tiles into national dataset...")
     conn = duckdb.connect()
     conn.install_extension("spatial")
     conn.load_extension("spatial")

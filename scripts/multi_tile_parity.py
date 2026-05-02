@@ -120,9 +120,15 @@ def compute_parity(
     national_parquet: Path, gdb_path: Path, bbox: tuple[float, float, float, float]
 ) -> dict:
     """Dissolved-union IoU + per-tile feature/area stats."""
-    ours = pq.read_table(national_parquet)
-    n_ours = ours.num_rows
-    ours_acres = float(np.asarray(ours["CSBACRES"]).sum())
+    if not national_parquet.exists():
+        # Empty tile (no cropland passed filters) — treat as 0-poly, 0-acre.
+        ours = None
+        n_ours = 0
+        ours_acres = 0.0
+    else:
+        ours = pq.read_table(national_parquet)
+        n_ours = ours.num_rows
+        ours_acres = float(np.asarray(ours["CSBACRES"]).sum()) if n_ours else 0.0
 
     usda = pyogrio.read_dataframe(
         str(gdb_path), layer="national1825", bbox=bbox, columns=["CSBID", "CSBACRES"]
@@ -148,7 +154,10 @@ def compute_parity(
     conn = duckdb.connect()
     conn.install_extension("spatial")
     conn.load_extension("spatial")
-    ours_tbl = pa.table({"g": pa.array(ours["geometry"], type=pa.binary())})
+    if ours is not None and n_ours > 0:
+        ours_tbl = pa.table({"g": pa.array(ours["geometry"], type=pa.binary())})
+    else:
+        ours_tbl = pa.table({"g": pa.array([], type=pa.binary())})
     if n_usda > 0:
         usda_tbl = pa.table({"g": pa.array(shapely.to_wkb(usda.geometry.values), type=pa.binary())})
     else:
