@@ -29,6 +29,7 @@ dependencies = [
   "contourrs>=0,<1",
   "duckdb>=1,<2",
   "geopandas>=1,<2",
+  "matplotlib>=3.8,<4",
   "numpy>=2,<3",
   "pyarrow>=23,<24",
   "pyogrio>=0.10,<1",

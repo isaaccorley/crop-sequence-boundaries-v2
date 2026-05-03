@@ -59,10 +59,10 @@ See `AGENTS.md` for module-level notes if you want more context.
 - Logging: `logging.getLogger(__name__)`. No bare `print` in library code.
 - Keep modules under ~500 LOC. Split when they grow.
 - CRS is fixed to `EPSG:5070` throughout the pipeline. Don't reproject
-  silently.
+    silently.
 - GeoParquet output uses the full-PROJJSON CRS form. The short
-  `{id: {authority, code}}` form breaks pyproj 3.x, geopandas, pyogrio,
-  and GDAL readers — don't reintroduce it.
+    `{id: {authority, code}}` form breaks pyproj 3.x, geopandas, pyogrio,
+    and GDAL readers — don't reintroduce it.
 
 `make check` runs:
 
@@ -79,15 +79,15 @@ uv lock
 
 - `pytest` from `tests/`.
 - Small synthetic fixtures. Build a 32x32 numpy array, write it to a
-  tmp_path GeoTIFF, run the stage. Don't commit large rasters.
+    tmp_path GeoTIFF, run the stage. Don't commit large rasters.
 - One test per behavior. Name tests after the behavior, not the
-  function (`test_eliminate_drops_small_polygons`, not `test_eliminate_1`).
+    function (`test_eliminate_drops_small_polygons`, not `test_eliminate_1`).
 - Use `tmp_path` for any filesystem output.
 - Use `pytest.approx` for float compares.
 - `pytest-xdist` is available; mark slow integration tests so they
-  can be excluded with `-m "not slow"`.
+    can be excluded with `-m "not slow"`.
 - Add a regression test when fixing a bug. Name it after the bug
-  (`test_regression_eliminate_loses_2ha_polygons`).
+    (`test_regression_eliminate_loses_2ha_polygons`).
 
 Run a single test:
 
@@ -136,7 +136,7 @@ Before opening a PR:
 - [ ] `make test` passes locally.
 - [ ] Commit messages follow Conventional Commits.
 - [ ] Docs updated when behavior or CLI changed (`README.md`,
-      `AGENTS.md`, or relevant module docstring).
+    `AGENTS.md`, or relevant module docstring).
 - [ ] No large binary fixtures added (>1 MB blocked by pre-commit).
 - [ ] Public API changes called out in the PR description.
 
@@ -175,12 +175,12 @@ delta and the affected region id.
 ## Triage expectations
 
 - Bug reports: I aim to acknowledge within a few days. A fix lands when
-  there's a regression test and a clear repro.
+    there's a regression test and a clear repro.
 - Feature requests: open an issue first to discuss scope before
-  writing code. Drive-by feature PRs without prior discussion may be
-  closed.
+    writing code. Drive-by feature PRs without prior discussion may be
+    closed.
 - Security issues: email `isaac.corley@taylorgeospatial.org` instead
-  of opening a public issue.
+    of opening a public issue.
 
 ## License
 

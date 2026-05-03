@@ -40,11 +40,11 @@ bibliography style are picked up from `sty/` without a system install.
 
 The manuscript is built in `preprint` mode by default. To switch:
 
-| Mode             | Edit `csb_icml2026.tex` line                         |
-|------------------|------------------------------------------------------|
-| Anonymous review | `\usepackage{sty/icml2026}`                          |
-| Preprint (now)   | `\usepackage[preprint]{sty/icml2026}`                |
-| Camera-ready     | `\usepackage[accepted]{sty/icml2026}`                |
+| Mode             | Edit `csb_icml2026.tex` line          |
+| ---------------- | ------------------------------------- |
+| Anonymous review | `\usepackage{sty/icml2026}`           |
+| Preprint (now)   | `\usepackage[preprint]{sty/icml2026}` |
+| Camera-ready     | `\usepackage[accepted]{sty/icml2026}` |
 
 ## Figures
 

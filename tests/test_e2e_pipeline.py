@@ -13,9 +13,11 @@ from __future__ import annotations
 
 import os
 import shutil
-from pathlib import Path
 from typing import TYPE_CHECKING
 from unittest.mock import patch
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 import geopandas as gpd
 import numpy as np
@@ -25,12 +27,8 @@ import rasterio
 from rasterio.transform import from_bounds
 from shapely.geometry import Polygon
 
-from csb.config import STATE_FIPS
 from csb.polygonize import run_polygonize
 from csb.postprocess import run_postprocess
-
-if TYPE_CHECKING:
-    pass
 
 # ---------------------------------------------------------------------------
 # Fixtures

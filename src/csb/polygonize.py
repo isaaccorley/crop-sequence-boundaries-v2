@@ -145,6 +145,7 @@ def _phase1_polygonize(args: tuple[str, dict[str, Any]]) -> str:
     min_cropland: int = params["min_cropland_years"]
     thresholds: list[float] = list(params["eliminate_thresholds"])
     min_area_keep: float = params["min_polygon_area"]
+    roads_mask_path: str | None = params.get("roads_mask")
 
     years = list(range(start_year, end_year + 1))
     t0 = time.perf_counter()
@@ -157,6 +158,15 @@ def _phase1_polygonize(args: tuple[str, dict[str, Any]]) -> str:
     # Keep filter: effective_count (cropland years - barren years) >= min_cropland_years.
     effective_map = effective_per_combo[combo_raster]
     mask = effective_map >= min_cropland
+    if roads_mask_path:
+        from pathlib import Path as _Path
+
+        from csb.roads import rasterize_roads_for_window
+
+        roads = rasterize_roads_for_window(
+            _Path(roads_mask_path), transform, window.width, window.height
+        )
+        mask &= ~roads  # exclude road/rail pixels so fields split at roads
     if not mask.any():
         return f"Skipped {area} (no valid pixels)"
 
@@ -321,6 +331,7 @@ def run_polygonize(
     phase1_workers: int | None = None,
     phase2_workers: int | None = None,
     area: str | None = None,
+    roads_mask: str | Path | None = None,
 ) -> Path:
     """Run polygonize for all (or one) window tile(s).
 
@@ -377,6 +388,7 @@ def run_polygonize(
         "min_cropland_years": min_cropland_years,
         "eliminate_thresholds": list(eliminate_thresholds),
         "min_polygon_area": min_polygon_area,
+        "roads_mask": str(roads_mask) if roads_mask else None,
     }
     p2_params = {
         "intermediate_dir": str(intermediate_dir),

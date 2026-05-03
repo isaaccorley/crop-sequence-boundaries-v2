@@ -275,6 +275,111 @@ def run_parity(
     return results
 
 
+def run_parity_whole_conus(
+    ours_parquet: Path,
+    usda_parquet: Path,
+    *,
+    threads: int = 32,
+) -> dict:
+    """Inclusion-exclusion IoU over the full CONUS extent (no tile sampling).
+
+    Spatial-join pushes through DuckDB row-group pruning thanks to the
+    Hilbert-sorted xmin/xmax/ymin/ymax columns from ``prep_inputs``. Pair
+    counts can run into the tens of millions; expect ~minutes on a 32-core
+    node. Returns the same shape as :func:`parity_for_bbox` minus the bbox.
+    """
+    conn = _connect(threads)
+    n_ours = conn.execute(
+        f"SELECT COUNT(*), SUM(CSBACRES) FROM read_parquet('{ours_parquet}')"
+    ).fetchone()
+    n_usda = conn.execute(
+        f"SELECT COUNT(*), SUM(CSBACRES) FROM read_parquet('{usda_parquet}')"
+    ).fetchone()
+    assert n_ours is not None
+    assert n_usda is not None
+
+    res: dict[str, object] = {
+        "scope": "CONUS",
+        "n_ours": int(n_ours[0] or 0),
+        "n_usda": int(n_usda[0] or 0),
+        "ours_acres": float(n_ours[1] or 0),
+        "usda_acres": float(n_usda[1] or 0),
+    }
+    if not (res["n_ours"] and res["n_usda"]):
+        res["iou"] = None
+        return res
+
+    oa = conn.execute(
+        f"SELECT SUM(ST_Area(ST_MakeValid(geometry)))/1e6 FROM read_parquet('{ours_parquet}')"
+    ).fetchone()
+    ua = conn.execute(
+        f"SELECT SUM(ST_Area(ST_MakeValid(geometry)))/1e6 FROM read_parquet('{usda_parquet}')"
+    ).fetchone()
+    inter = conn.execute(f"""
+        SELECT SUM(ST_Area(ST_Intersection(
+            ST_MakeValid(o.geometry), ST_MakeValid(u.geometry)
+        )))/1e6
+        FROM read_parquet('{ours_parquet}') o
+        JOIN read_parquet('{usda_parquet}') u
+          ON o.xmax >= u.xmin AND o.xmin <= u.xmax
+         AND o.ymax >= u.ymin AND o.ymin <= u.ymax
+         AND ST_Intersects(o.geometry, u.geometry)
+    """).fetchone()
+    conn.close()
+    assert oa is not None
+    assert ua is not None
+    assert inter is not None
+
+    ours_km2 = float(oa[0] or 0)
+    usda_km2 = float(ua[0] or 0)
+    inter_km2 = float(inter[0] or 0)
+    union_km2 = ours_km2 + usda_km2 - inter_km2
+    res["ours_dissolved_km2"] = ours_km2
+    res["usda_dissolved_km2"] = usda_km2
+    res["intersection_km2"] = inter_km2
+    res["union_km2"] = union_km2
+    res["iou"] = (inter_km2 / union_km2) if union_km2 else None
+    res["ratio_polys"] = res["n_ours"] / res["n_usda"]
+    res["ratio_acres"] = res["ours_acres"] / res["usda_acres"]
+    return res
+
+
+def per_class_confusion(
+    ours_parquet: Path,
+    usda_parquet: Path,
+    *,
+    year: int,
+    threads: int = 32,
+) -> list[dict]:
+    """Area-weighted CDL{year} confusion between ours and USDA.
+
+    For every spatial-overlap pair (o, u), accumulates the intersection area
+    into a (ours_class, usda_class) bucket. Returns a flat list of dicts —
+    one per nonzero bucket — sortable by area or class.
+    """
+    cdl_col = f"CDL{year}"
+    conn = _connect(threads)
+    rows = conn.execute(f"""
+        SELECT
+            o.{cdl_col} AS ours_class,
+            u.{cdl_col} AS usda_class,
+            SUM(ST_Area(ST_Intersection(
+                ST_MakeValid(o.geometry), ST_MakeValid(u.geometry)
+            ))) AS area_sqm
+        FROM read_parquet('{ours_parquet}') o
+        JOIN read_parquet('{usda_parquet}') u
+          ON o.xmax >= u.xmin AND o.xmin <= u.xmax
+         AND o.ymax >= u.ymin AND o.ymin <= u.ymax
+         AND ST_Intersects(o.geometry, u.geometry)
+        GROUP BY ALL
+    """).fetchall()
+    conn.close()
+    return [
+        {"ours_class": int(r[0] or 0), "usda_class": int(r[1] or 0), "area_sqm": float(r[2] or 0)}
+        for r in rows
+    ]
+
+
 def summarize(results: list[dict]) -> dict:
     """Aggregate IoU / ratio stats across all valid (non-error) regions."""
     ok = [r for r in results if r.get("iou") is not None]

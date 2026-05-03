@@ -94,6 +94,39 @@ def download(
     console.print(f"[bold green]Downloaded {len(paths)} CDL rasters")
 
 
+@main.command(name="roads-prep")
+@click.option(
+    "--output",
+    "-o",
+    type=click.Path(dir_okay=False),
+    required=True,
+    help="Output GeoParquet path for the buffered road/rail polygons.",
+)
+@click.option(
+    "--release",
+    default=None,
+    help="Overture release tag (default: pinned recent release in csb.roads).",
+)
+@click.option(
+    "--buffer-m",
+    type=float,
+    default=15.0,
+    show_default=True,
+    help="Buffer (metres) applied to road/rail centerlines before rasterization.",
+)
+@click.option("--threads", type=int, default=16, show_default=True)
+def roads_prep(output: str, release: str | None, buffer_m: float, threads: int) -> None:
+    """Download CONUS road + rail centerlines from Overture into an indexed parquet."""
+    from csb.roads import DEFAULT_OVERTURE_RELEASE, fetch_overture_roads
+
+    fetch_overture_roads(
+        Path(output),
+        release=release or DEFAULT_OVERTURE_RELEASE,
+        buffer_m=buffer_m,
+        threads=threads,
+    )
+
+
 @main.command(name="build-boundaries")
 @click.option(
     "--output",
@@ -179,6 +212,14 @@ def _polygonize_options(f):  # noqa: ANN001, ANN202 — Click decorator factory
             default=None,
             help="Phase-2 (simplify) workers. Defaults to cpu_fraction *cpu_count.",
         ),
+        click.option(
+            "--roads-mask",
+            type=click.Path(exists=True, dir_okay=False),
+            default=None,
+            help="Optional GeoParquet from `csb roads-prep`. When set, road/rail "
+            "buffers are excluded from the cropland mask before connected-components "
+            "labeling so adjacent fields don't merge across roads.",
+        ),
     ]
     for opt in reversed(flags):
         f = opt(f)
@@ -211,6 +252,7 @@ def polygonize(
     cpu_fraction: float,
     phase1_workers: int | None,
     phase2_workers: int | None,
+    roads_mask: str | None,
 ) -> None:
     """Combine multi-year CDL → label-eliminate → simplify → GeoParquet."""
     from csb.polygonize import run_polygonize
@@ -234,6 +276,7 @@ def polygonize(
         phase1_workers=phase1_workers,
         phase2_workers=phase2_workers,
         area=area,
+        roads_mask=roads_mask,
     )
 
 
@@ -326,6 +369,7 @@ def run_all(
     cpu_fraction: float,
     phase1_workers: int | None,
     phase2_workers: int | None,
+    roads_mask: str | None,
 ) -> None:
     """Run polygonize + postprocess back-to-back."""
     from csb.polygonize import run_polygonize
@@ -347,6 +391,7 @@ def run_all(
         cpu_fraction=cpu_fraction,
         phase1_workers=phase1_workers,
         phase2_workers=phase2_workers,
+        roads_mask=roads_mask,
     )
     run_postprocess(
         start_year=start_year,
@@ -414,9 +459,53 @@ def parity_prep(ours: str, ours_out: str, usda_gdb: str, usda_out: str, threads:
     help="JSON output path for the per-region report.",
 )
 @click.option("--threads", type=int, default=16, show_default=True)
-def parity(ours: str, usda: str, report: str | None, threads: int) -> None:
-    """Compare our CSB output against USDA ground truth across 16 regions."""
-    from csb.parity import DEFAULT_REGIONS, run_parity, summarize
+@click.option(
+    "--whole-conus",
+    is_flag=True,
+    help="Skip the 16-region sample and compute IoU over the full CONUS extent.",
+)
+@click.option(
+    "--per-class",
+    type=int,
+    default=None,
+    help="Also produce an area-weighted CDL confusion matrix for the given year "
+    "(e.g. --per-class 2024).",
+)
+def parity(
+    ours: str,
+    usda: str,
+    report: str | None,
+    threads: int,
+    whole_conus: bool,
+    per_class: int | None,
+) -> None:
+    """Compare our CSB output against USDA ground truth."""
+    from csb.parity import (
+        DEFAULT_REGIONS,
+        per_class_confusion,
+        run_parity,
+        run_parity_whole_conus,
+        summarize,
+    )
+
+    if whole_conus:
+        result = run_parity_whole_conus(Path(ours), Path(usda), threads=threads)
+        console.print(json.dumps(result, indent=2))
+        confusion: list[dict] = []
+        if per_class is not None:
+            console.print(f"\n[bold]CDL{per_class} confusion (area-weighted, top 25):")
+            confusion = per_class_confusion(Path(ours), Path(usda), year=per_class, threads=threads)
+            for r in sorted(confusion, key=lambda r: -r["area_sqm"])[:25]:
+                console.print(
+                    f"  ours={r['ours_class']:>3}  usda={r['usda_class']:>3}  "
+                    f"{r['area_sqm'] / 1e6:>10.1f} km²"
+                )
+        if report:
+            Path(report).parent.mkdir(parents=True, exist_ok=True)
+            with Path(report).open("w") as f:
+                json.dump({"conus": result, "per_class": confusion}, f, indent=2)
+            console.print(f"Report: {report}")
+        return
 
     results = run_parity(
         Path(ours),
@@ -447,6 +536,77 @@ def parity(ours: str, usda: str, report: str | None, threads: int) -> None:
     if report:
         console.print(f"Report: {report}")
         console.print(json.dumps(summary, indent=2))
+
+
+@main.command()
+@click.option(
+    "--ours",
+    type=click.Path(exists=True, dir_okay=False),
+    required=True,
+    help="Indexed ours parquet (from `csb parity-prep`).",
+)
+@click.option(
+    "--usda",
+    type=click.Path(exists=True, dir_okay=False),
+    required=True,
+    help="Indexed USDA parquet (from `csb parity-prep`).",
+)
+@click.option(
+    "--region",
+    type=str,
+    default=None,
+    help="Named region from csb.parity.DEFAULT_REGIONS (e.g. iowa_corn_belt). "
+    "If omitted, --bbox is required.",
+)
+@click.option(
+    "--bbox",
+    type=str,
+    default=None,
+    help="EPSG:5070 bbox 'minx,miny,maxx,maxy'. Overrides --region.",
+)
+@click.option(
+    "--output",
+    "-o",
+    type=click.Path(dir_okay=False),
+    required=True,
+    help="Output PNG path.",
+)
+@click.option("--title", type=str, default="")
+@click.option("--dpi", type=int, default=200, show_default=True)
+def visualize(
+    ours: str,
+    usda: str,
+    region: str | None,
+    bbox: str | None,
+    output: str,
+    title: str,
+    dpi: int,
+) -> None:
+    """Render a 4-panel comparison (ours / USDA / intersection / sym-diff)."""
+    from csb.parity import DEFAULT_REGIONS, find_bbox_5070
+    from csb.visualize import render_comparison
+
+    if bbox:
+        parts = [float(x.strip()) for x in bbox.split(",")]
+        if len(parts) != 4:
+            msg = f"--bbox must have 4 comma-separated floats, got {bbox!r}"
+            raise click.BadParameter(msg)
+        bbox_5070 = (parts[0], parts[1], parts[2], parts[3])
+        title = title or f"bbox {bbox}"
+    elif region:
+        match = next((r for r in DEFAULT_REGIONS if r[0] == region), None)
+        if match is None:
+            msg = f"unknown region {region!r}; see csb.parity.DEFAULT_REGIONS"
+            raise click.BadParameter(msg)
+        _name, tx, ty, what = match
+        bbox_5070 = find_bbox_5070(tx, ty)
+        title = title or f"{region} — {what}"
+    else:
+        msg = "must specify either --region or --bbox"
+        raise click.UsageError(msg)
+
+    render_comparison(Path(ours), Path(usda), bbox_5070, Path(output), title=title, dpi=dpi)
+    console.print(f"[bold green]wrote {output}")
 
 
 @main.command()
