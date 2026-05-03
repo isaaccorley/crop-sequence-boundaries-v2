@@ -6,7 +6,7 @@
 ARG TIPPECANOE_VERSION=2.79.0
 
 # ---- builder: compile tippecanoe ----------------------------------------
-FROM debian:bookworm-slim@sha256:5a2a80d11944804c01b8619bc967e31801ec39bf3257ab80b91070eb23625644 AS tippecanoe-builder
+FROM debian:bookworm-slim@sha256:f9c6a2fd2ddbc23e336b6257a5245e31f996953ef06cd13a59fa0a1df2d5c252 AS tippecanoe-builder
 
 ARG TIPPECANOE_VERSION
 
