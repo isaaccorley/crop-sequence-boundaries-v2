@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pyarrow as pa
 import pyarrow.parquet as pq
+from pyproj import CRS
 
 
 def write_geoparquet(
@@ -16,6 +17,12 @@ def write_geoparquet(
     crs_code: int = 5070,
 ) -> Path:
     """Write a PyArrow table as GeoParquet with proper geo metadata.
+
+    The CRS is serialized as full PROJJSON via `pyproj.CRS.to_json_dict()`.
+    The short form `{"id": {"authority": "EPSG", "code": ...}}` lacks the
+    required `"type"` field per PROJJSON spec; pyproj 3.x rejects it with
+    "Internal Proj Error: proj_create: Missing 'type' key", which breaks
+    downstream consumers (geopandas, pyogrio, tippecanoe via gdal).
 
     Args:
         table: Arrow table with a WKB geometry column.
@@ -29,6 +36,7 @@ def write_geoparquet(
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
 
+    crs_projjson = CRS.from_epsg(crs_code).to_json_dict()
     metadata = dict(table.schema.metadata or {})
     geo_meta = {
         "version": "1.1.0",
@@ -37,7 +45,7 @@ def write_geoparquet(
             geometry_column: {
                 "encoding": "WKB",
                 "geometry_types": [],
-                "crs": {"id": {"authority": "EPSG", "code": crs_code}},
+                "crs": crs_projjson,
             }
         },
     }
