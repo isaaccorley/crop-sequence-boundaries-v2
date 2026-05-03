@@ -1,12 +1,16 @@
-"""Configuration loading and defaults."""
+"""Constants and defaults for the CSB pipeline.
+
+CDL semantics, output schema constants, and the default values that the CLI
+exposes as flags. There is no YAML config file — every parameter is a
+keyword argument on the public Python API and a corresponding ``--option``
+on the CLI.
+"""
 
 from __future__ import annotations
 
-from importlib import resources
-from pathlib import Path
-from typing import Any
-
-import yaml
+# ---------------------------------------------------------------------------
+# CDL semantics
+# ---------------------------------------------------------------------------
 
 # CDL crop classes are 1..CDL_CROP_MAX inclusive; >= 82 are non-cropland
 # (water, developed, forest, grassland, wetlands, etc.).
@@ -22,7 +26,33 @@ CDL_PIXEL_AREA_SQM = 900
 DEFAULT_CRS = "EPSG:5070"
 ACRES_PER_SQM = 1.0 / 4046.86
 
-# CONUS state abbreviation → FIPS code (excludes AK, HI, territories)
+
+# ---------------------------------------------------------------------------
+# Pipeline defaults (mirror the CLI flag defaults so the Python API and the
+# CLI agree).
+# ---------------------------------------------------------------------------
+
+# Filesystem layout assumed by the bundled defaults. Override per command.
+DEFAULT_NATIONAL_CDL_DIR = "data/input/national_cdl"
+DEFAULT_BOUNDARIES_PATH = "data/input/boundaries/US48_ASD_CNTY_Albers.parquet"
+DEFAULT_OUTPUT_DIR = "data/output"
+
+# Polygonize tuning. Defaults match USDA's CSBElimination 4-pass schedule
+# and a 60 m simplification tolerance (the analogue of arcpy BEND_SIMPLIFY 60).
+DEFAULT_TILE_SIZE = 5000
+DEFAULT_MIN_CROPLAND_YEARS = 2
+DEFAULT_ELIMINATE_THRESHOLDS: tuple[float, ...] = (100, 1000, 10000, 10000)
+DEFAULT_MIN_POLYGON_AREA = 10000
+DEFAULT_SIMPLIFY_TOLERANCE = 60
+
+# Parallelism.
+DEFAULT_CPU_FRACTION = 0.95
+
+
+# ---------------------------------------------------------------------------
+# CONUS state abbreviation -> FIPS code (excludes AK, HI, territories).
+# ---------------------------------------------------------------------------
+
 STATE_FIPS: dict[str, str] = {
     "AL": "01",
     "AZ": "04",
@@ -73,14 +103,3 @@ STATE_FIPS: dict[str, str] = {
     "WI": "55",
     "WY": "56",
 }
-
-
-def load_config(path: str | Path) -> dict[str, Any]:
-    """Load a YAML config file and return as dict."""
-    with Path(path).open() as f:
-        return yaml.safe_load(f)
-
-
-def bundled_config_path() -> Path:
-    """Path to the bundled default YAML config."""
-    return Path(str(resources.files("csb").joinpath("_data/default.yaml")))

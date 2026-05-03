@@ -29,7 +29,17 @@ import shapely
 from rasterio.windows import Window
 from rich.console import Console
 
-from csb.config import BARREN_CODE, CDL_CROP_MAX
+from csb.config import (
+    BARREN_CODE,
+    CDL_CROP_MAX,
+    DEFAULT_CPU_FRACTION,
+    DEFAULT_ELIMINATE_THRESHOLDS,
+    DEFAULT_MIN_CROPLAND_YEARS,
+    DEFAULT_MIN_POLYGON_AREA,
+    DEFAULT_NATIONAL_CDL_DIR,
+    DEFAULT_SIMPLIFY_TOLERANCE,
+    DEFAULT_TILE_SIZE,
+)
 from csb.io import write_geoparquet
 from csb.raster_eliminate import (
     dissolve_same_combo,
@@ -40,8 +50,6 @@ from csb.raster_eliminate import (
 from csb.utils import polygonize, worker_count
 
 logger = logging.getLogger(__name__)
-
-DEFAULT_TILE_SIZE = 5000
 
 
 def _tile_windows(width: int, height: int, tile_size: int) -> list[tuple[str, Window]]:
@@ -129,18 +137,14 @@ def _combine_years_windowed(
 def _phase1_polygonize(args: tuple[str, dict[str, Any]]) -> str:
     """Phase 1: read CDL, combine, label-eliminate, polygonize -> intermediate parquet."""
     area, params = args
-    cfg = params["config"]
     start_year: int = params["start_year"]
     end_year: int = params["end_year"]
     intermediate_dir = Path(params["intermediate_dir"])
-    window_dict = params["window"]
-    window = Window(**window_dict)
-
-    national_cdl = Path(cfg["paths"]["national_cdl"])
-    min_cropland = cfg["global"]["min_cropland_years"]
-    pcfg = cfg["polygonize"]
-    thresholds = pcfg["eliminate_thresholds"]
-    min_area_keep = pcfg["min_polygon_area"]
+    window = Window(**params["window"])
+    national_cdl = Path(params["national_cdl"])
+    min_cropland: int = params["min_cropland_years"]
+    thresholds: list[float] = list(params["eliminate_thresholds"])
+    min_area_keep: float = params["min_polygon_area"]
 
     years = list(range(start_year, end_year + 1))
     t0 = time.perf_counter()
@@ -245,13 +249,10 @@ def _phase1_polygonize(args: tuple[str, dict[str, Any]]) -> str:
 def _phase2_simplify(args: tuple[str, dict[str, Any]]) -> str:
     """Phase 2: coverage_simplify + min-area filter, write final GeoParquet."""
     area, params = args
-    cfg = params["config"]
     intermediate_dir = Path(params["intermediate_dir"])
     output_dir = Path(params["output_dir"])
-
-    pcfg = cfg["polygonize"]
-    simplify_tol = pcfg["simplify_tolerance"]
-    min_area_keep = pcfg["min_polygon_area"]
+    simplify_tol: float = params["simplify_tolerance"]
+    min_area_keep: float = params["min_polygon_area"]
 
     intermediate_path = intermediate_dir / f"{area}.parquet"
     t0 = time.perf_counter()
@@ -298,19 +299,27 @@ def process_tile(args: tuple[str, dict[str, Any]]) -> str:
     area, params = args
     intermediate_dir = Path(params.get("intermediate_dir") or params["output_dir"]) / "_tmp"
     intermediate_dir.mkdir(parents=True, exist_ok=True)
-    p1_params = {**params, "intermediate_dir": str(intermediate_dir)}
-    r1 = _phase1_polygonize((area, p1_params))
+    inner = {**params, "intermediate_dir": str(intermediate_dir)}
+    r1 = _phase1_polygonize((area, inner))
     if r1.startswith("Skipped"):
         return r1
-    p2_params = {**params, "intermediate_dir": str(intermediate_dir)}
-    return _phase2_simplify((area, p2_params))
+    return _phase2_simplify((area, inner))
 
 
 def run_polygonize(
-    cfg: dict[str, Any],
+    *,
     start_year: int,
     end_year: int,
     output_dir: str | Path,
+    national_cdl_dir: str | Path = DEFAULT_NATIONAL_CDL_DIR,
+    tile_size: int = DEFAULT_TILE_SIZE,
+    min_cropland_years: int = DEFAULT_MIN_CROPLAND_YEARS,
+    eliminate_thresholds: tuple[float, ...] = DEFAULT_ELIMINATE_THRESHOLDS,
+    min_polygon_area: float = DEFAULT_MIN_POLYGON_AREA,
+    simplify_tolerance: float = DEFAULT_SIMPLIFY_TOLERANCE,
+    cpu_fraction: float = DEFAULT_CPU_FRACTION,
+    phase1_workers: int | None = None,
+    phase2_workers: int | None = None,
     area: str | None = None,
 ) -> Path:
     """Run polygonize for all (or one) window tile(s).
@@ -323,14 +332,11 @@ def run_polygonize(
     output_dir.mkdir(parents=True, exist_ok=True)
     intermediate_dir = output_dir / "_intermediate"
     intermediate_dir.mkdir(parents=True, exist_ok=True)
+    national_cdl = Path(national_cdl_dir)
 
-    national_cdl = Path(cfg["paths"]["national_cdl"])
-    pcfg = cfg.get("polygonize", {})
-    tile_size = pcfg.get("tile_size", DEFAULT_TILE_SIZE)
-
-    default_workers = worker_count(cfg["global"]["cpu_fraction"])
-    phase1_workers = pcfg.get("phase1_workers", max(1, default_workers // 4))
-    phase2_workers = pcfg.get("phase2_workers") or pcfg.get("max_workers") or default_workers
+    default_workers = worker_count(cpu_fraction)
+    phase1_workers = phase1_workers or max(1, default_workers // 4)
+    phase2_workers = phase2_workers or default_workers
 
     first_cdl = national_cdl / str(start_year) / f"{start_year}_30m_cdls.tif"
     with rasterio.open(first_cdl) as src:
@@ -364,15 +370,19 @@ def run_polygonize(
         return output_dir
 
     p1_params = {
-        "config": cfg,
+        "national_cdl": str(national_cdl),
         "start_year": start_year,
         "end_year": end_year,
         "intermediate_dir": str(intermediate_dir),
+        "min_cropland_years": min_cropland_years,
+        "eliminate_thresholds": list(eliminate_thresholds),
+        "min_polygon_area": min_polygon_area,
     }
     p2_params = {
-        "config": cfg,
         "intermediate_dir": str(intermediate_dir),
         "output_dir": str(output_dir),
+        "simplify_tolerance": simplify_tolerance,
+        "min_polygon_area": min_polygon_area,
     }
 
     def _p1_args(name: str, w: Window) -> tuple[str, dict[str, Any]]:

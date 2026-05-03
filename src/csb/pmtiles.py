@@ -139,7 +139,7 @@ def build_pmtiles(
     *,
     workdir: Path | None = None,
     keep_fgb: bool = False,
-    **tippecanoe_kwargs: Any,
+    **tippecanoe_kwargs: Any,  # noqa: ANN401 — passthrough to fgb_to_pmtiles
 ) -> Path:
     """Convert a CSB GeoParquet to a PMTiles archive in one call.
 

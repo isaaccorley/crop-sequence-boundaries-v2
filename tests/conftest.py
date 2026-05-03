@@ -1,8 +1,7 @@
-"""Shared test fixtures for CSB tests."""
+"""Shared test fixtures."""
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -11,34 +10,19 @@ import rasterio
 from rasterio.transform import from_bounds
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from affine import Affine
 
 
 @pytest.fixture
-def configs_dir() -> Path:
-    return Path(__file__).parent.parent / "configs"
-
-
-@pytest.fixture
-def default_config_path(configs_dir: Path) -> Path:
-    return configs_dir / "default.yaml"
-
-
-@pytest.fixture
-def default_config(default_config_path: Path) -> dict[str, object]:
-    from csb.config import load_config
-
-    return load_config(default_config_path)
-
-
-@pytest.fixture
 def sample_raster() -> np.ndarray:
-    """A small 10x10 integer raster with a few distinct zones."""
+    """A small 10x10 integer raster with four distinct zones."""
     raster = np.zeros((10, 10), dtype=np.int32)
-    raster[0:5, 0:5] = 1  # zone 1: top-left
-    raster[0:5, 5:10] = 2  # zone 2: top-right
-    raster[5:10, 0:5] = 3  # zone 3: bottom-left
-    raster[5:10, 5:10] = 4  # zone 4: bottom-right
+    raster[0:5, 0:5] = 1
+    raster[0:5, 5:10] = 2
+    raster[5:10, 0:5] = 3
+    raster[5:10, 5:10] = 4
     return raster
 
 
@@ -69,17 +53,12 @@ def sample_raster_path(tmp_path: Path, sample_raster: np.ndarray, sample_transfo
 
 @pytest.fixture
 def multi_year_rasters(tmp_path: Path) -> tuple[Path, list[int]]:
-    """Create 3 years of national CDL-like rasters.
-
-    Returns (base_dir, years) where base_dir/{year}/{year}_30m_cdls.tif exists.
-    """
+    """Create three years of CDL-like rasters at ``base/{year}/{year}_30m_cdls.tif``."""
     years = [2020, 2021, 2022]
     rng = np.random.default_rng(42)
-
     for year in years:
         year_dir = tmp_path / str(year)
         year_dir.mkdir()
-        # 20x20 raster with random CDL-like values
         data = rng.choice([0, 1, 5, 45, 61, 176], size=(20, 20)).astype(np.int32)
         path = year_dir / f"{year}_30m_cdls.tif"
         transform = from_bounds(0, 0, 600, 600, 20, 20)
@@ -95,5 +74,4 @@ def multi_year_rasters(tmp_path: Path) -> tuple[Path, list[int]]:
         }
         with rasterio.open(path, "w", **profile) as dst:
             dst.write(data, 1)
-
     return tmp_path, years

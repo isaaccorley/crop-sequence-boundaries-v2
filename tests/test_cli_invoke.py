@@ -13,15 +13,28 @@ from csb.cli import main
 def test_polygonize_invokes_run_polygonize(tmp_path: Path) -> None:
     runner = CliRunner()
     output_dir = str(tmp_path / "polygonize_out")
+    cdl_dir = tmp_path / "cdl"
+    cdl_dir.mkdir()
 
     with patch("csb.polygonize.run_polygonize", return_value=Path(output_dir)) as mock:
-        result = runner.invoke(main, ["polygonize", "2020", "2022", "-o", output_dir])
+        result = runner.invoke(
+            main,
+            [
+                "polygonize",
+                "2020",
+                "2022",
+                "-o",
+                output_dir,
+                "--national-cdl-dir",
+                str(cdl_dir),
+            ],
+        )
 
-    assert result.exit_code == 0
+    assert result.exit_code == 0, result.output
     mock.assert_called_once()
-    call_args = mock.call_args
-    assert call_args[0][1] == 2020
-    assert call_args[0][2] == 2022
+    kwargs = mock.call_args.kwargs
+    assert kwargs["start_year"] == 2020
+    assert kwargs["end_year"] == 2022
 
 
 def test_postprocess_invokes_run_postprocess(tmp_path: Path) -> None:
@@ -44,13 +57,18 @@ def test_postprocess_invokes_run_postprocess(tmp_path: Path) -> None:
             ],
         )
 
-    assert result.exit_code == 0
+    assert result.exit_code == 0, result.output
     mock.assert_called_once()
+    kwargs = mock.call_args.kwargs
+    assert kwargs["start_year"] == 2020
+    assert kwargs["end_year"] == 2022
 
 
 def test_run_all_invokes_all_stages(tmp_path: Path) -> None:
     runner = CliRunner()
     output_dir = str(tmp_path / "all_out")
+    cdl_dir = tmp_path / "cdl"
+    cdl_dir.mkdir()
 
     with (
         patch(
@@ -60,26 +78,39 @@ def test_run_all_invokes_all_stages(tmp_path: Path) -> None:
             "csb.postprocess.run_postprocess", return_value=Path(tmp_path / "postprocess")
         ) as mock_post,
     ):
-        result = runner.invoke(main, ["run-all", "2020", "2022", "-o", output_dir])
+        result = runner.invoke(
+            main,
+            [
+                "run-all",
+                "2020",
+                "2022",
+                "-o",
+                output_dir,
+                "--national-cdl-dir",
+                str(cdl_dir),
+            ],
+        )
 
     assert result.exit_code == 0, result.output
     mock_poly.assert_called_once()
     mock_post.assert_called_once()
-    call_args = mock_poly.call_args
-    assert call_args[0][1] == 2020
-    assert call_args[0][2] == 2022
+    assert mock_poly.call_args.kwargs["start_year"] == 2020
+    assert mock_poly.call_args.kwargs["end_year"] == 2022
 
 
 def test_polygonize_uses_default_output(tmp_path: Path) -> None:
-    """When no -o is given, output path comes from config."""
+    """When no -o is given, output path is derived from start/end year."""
     runner = CliRunner()
+    cdl_dir = tmp_path / "cdl"
+    cdl_dir.mkdir()
 
     with patch("csb.polygonize.run_polygonize", return_value=Path("/tmp/out")) as mock:
-        result = runner.invoke(main, ["polygonize", "2020", "2022"])
+        result = runner.invoke(
+            main, ["polygonize", "2020", "2022", "--national-cdl-dir", str(cdl_dir)]
+        )
 
-    assert result.exit_code == 0
+    assert result.exit_code == 0, result.output
     mock.assert_called_once()
-    call_args = mock.call_args
-    out_path = call_args[0][3]
+    out_path = mock.call_args.kwargs["output_dir"]
     assert "polygonize" in str(out_path)
     assert "2020_2022" in str(out_path)

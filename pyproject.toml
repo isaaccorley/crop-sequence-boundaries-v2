@@ -33,7 +33,6 @@ dependencies = [
   "pyarrow>=23,<24",
   "pyogrio>=0.10,<1",
   "pyproj>=3.6,<4",
-  "pyyaml>=6,<7",
   "rasterio>=1,<2",
   "rich>=14,<15",
   "scikit-image>=0.24,<1",

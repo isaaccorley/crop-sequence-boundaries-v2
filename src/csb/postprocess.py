@@ -16,7 +16,7 @@ from typing import Any
 import duckdb
 from rich.console import Console
 
-from csb.config import ACRES_PER_SQM, STATE_FIPS
+from csb.config import ACRES_PER_SQM, DEFAULT_BOUNDARIES_PATH, DEFAULT_CPU_FRACTION, STATE_FIPS
 from csb.io import write_geoparquet
 from csb.utils import parallel_map, parallel_starmap, worker_count
 
@@ -65,11 +65,10 @@ def _spatial_join_boundaries(
 def _enrich_tile(args: tuple[Path, dict[str, Any]]) -> str:
     """Enrich a single tile parquet with boundary join + zonal CDL stats."""
     parquet_path, params = args
-    cfg = params["config"]
     start_year: int = params["start_year"]
     end_year: int = params["end_year"]
     output_dir = Path(params["output_dir"])
-    boundaries_path = Path(cfg["paths"]["boundaries"])
+    boundaries_path = Path(params["boundaries"])
 
     area_name = parquet_path.stem
     csb_years = f"{str(start_year)[2:]}{str(end_year)[2:]}"
@@ -186,16 +185,19 @@ def _export_state(state: str, fips: str, params: dict[str, Any]) -> str:
 
 
 def run_postprocess(
-    cfg: dict[str, Any],
+    *,
     start_year: int,
     end_year: int,
     polygonize_dir: str | Path,
     output_dir: str | Path,
+    boundaries_path: str | Path = DEFAULT_BOUNDARIES_PATH,
+    cpu_fraction: float = DEFAULT_CPU_FRACTION,
 ) -> Path:
     """Enrich polygonize-stage tiles and split into national + per-state outputs."""
     console = Console()
     polygonize_dir = Path(polygonize_dir)
     output_dir = Path(output_dir)
+    boundaries_path = Path(boundaries_path)
 
     enrich_dir = output_dir / "enrich"
     enrich_dir.mkdir(parents=True, exist_ok=True)
@@ -209,11 +211,11 @@ def run_postprocess(
     remaining = [f for f in parquet_files if f.stem not in done]
 
     if remaining:
-        n_workers = worker_count(cfg["global"]["cpu_fraction"])
+        n_workers = worker_count(cpu_fraction)
         console.print(f"  Enrich: {len(remaining)} tiles, {n_workers} workers")
 
         params = {
-            "config": cfg,
+            "boundaries": str(boundaries_path),
             "start_year": start_year,
             "end_year": end_year,
             "output_dir": str(enrich_dir),
@@ -252,7 +254,7 @@ def run_postprocess(
     conn.close()
     console.print(f"National parquet: {national_parquet}")
 
-    n_workers = worker_count(cfg["global"]["cpu_fraction"])
+    n_workers = worker_count(cpu_fraction)
     console.print(f"Distributing to {len(STATE_FIPS)} states with {n_workers} workers...")
 
     params_dist = {

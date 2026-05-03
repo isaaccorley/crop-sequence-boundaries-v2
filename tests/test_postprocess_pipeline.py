@@ -307,11 +307,6 @@ def test_run_postprocess(tmp_path: Path) -> None:
     # Matching stub in polygonize_dir (so done set matches)
     (polygonize_dir / "area1.parquet").touch()
 
-    cfg = {
-        "global": {"cpu_fraction": 0.5},
-        "paths": {"boundaries": "/fake", "national_cdl": "/fake"},
-    }
-
     with (
         patch("csb.postprocess.STATE_FIPS", {"IL": "17"}),
         patch(
@@ -319,7 +314,14 @@ def test_run_postprocess(tmp_path: Path) -> None:
             side_effect=lambda fn, items, **kw: [fn(*args) for args in items],
         ),
     ):
-        result = run_postprocess(cfg, 2020, 2024, polygonize_dir, output_dir)
+        result = run_postprocess(
+            start_year=2020,
+            end_year=2024,
+            polygonize_dir=polygonize_dir,
+            output_dir=output_dir,
+            boundaries_path="/fake",
+            cpu_fraction=0.5,
+        )
 
     assert result.exists()
     national = output_dir / "national" / "CSB2024.parquet"
@@ -337,11 +339,6 @@ def test_run_postprocess_skips_done_enrich(tmp_path: Path) -> None:
     _make_enriched_parquet(enrich_dir / "T1.parquet", n=2, statefips="17", csbyears="2021")
     (polygonize_dir / "T1.parquet").touch()
 
-    cfg = {
-        "global": {"cpu_fraction": 0.5},
-        "paths": {"boundaries": "/fake", "national_cdl": "/fake"},
-    }
-
     with (
         patch("csb.postprocess.STATE_FIPS", {"IL": "17"}),
         patch(
@@ -349,6 +346,13 @@ def test_run_postprocess_skips_done_enrich(tmp_path: Path) -> None:
             side_effect=lambda fn, items, **kw: [fn(*args) for args in items],
         ),
     ):
-        result = run_postprocess(cfg, 2020, 2021, polygonize_dir, output_dir)
+        result = run_postprocess(
+            start_year=2020,
+            end_year=2021,
+            polygonize_dir=polygonize_dir,
+            output_dir=output_dir,
+            boundaries_path="/fake",
+            cpu_fraction=0.5,
+        )
 
     assert result == output_dir

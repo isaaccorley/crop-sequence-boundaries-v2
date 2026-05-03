@@ -8,28 +8,43 @@ from pathlib import Path
 import click
 from rich.console import Console
 
-from csb.config import bundled_config_path, load_config
+from csb.config import (
+    DEFAULT_BOUNDARIES_PATH,
+    DEFAULT_CPU_FRACTION,
+    DEFAULT_ELIMINATE_THRESHOLDS,
+    DEFAULT_MIN_CROPLAND_YEARS,
+    DEFAULT_MIN_POLYGON_AREA,
+    DEFAULT_NATIONAL_CDL_DIR,
+    DEFAULT_OUTPUT_DIR,
+    DEFAULT_SIMPLIFY_TOLERANCE,
+    DEFAULT_TILE_SIZE,
+)
 
 console = Console()
 
+_DEFAULT_THRESHOLDS_STR = ",".join(str(int(t)) for t in DEFAULT_ELIMINATE_THRESHOLDS)
+
+
+def _parse_thresholds(
+    _ctx: click.Context, _param: click.Parameter, value: str
+) -> tuple[float, ...]:
+    """Click callback: parse a comma-separated list of floats."""
+    if not value:
+        return DEFAULT_ELIMINATE_THRESHOLDS
+    try:
+        return tuple(float(x.strip()) for x in value.split(","))
+    except ValueError as e:
+        msg = f"--eliminate-thresholds must be a comma-separated list of numbers, got {value!r}"
+        raise click.BadParameter(msg) from e
+
 
 @click.group()
-@click.option(
-    "--config",
-    "-c",
-    type=click.Path(exists=True),
-    default=None,
-    help="Path to YAML config (defaults to the bundled configs/default.yaml).",
-)
-@click.pass_context
-def main(ctx: click.Context, config: str | None) -> None:
+def main() -> None:
     """CSB — open-source Crop Sequence Boundaries pipeline."""
-    ctx.ensure_object(dict)
-    ctx.obj["config"] = load_config(config or bundled_config_path())
 
 
 # ---------------------------------------------------------------------------
-# Stage commands
+# Inputs
 # ---------------------------------------------------------------------------
 
 
@@ -40,96 +55,34 @@ def main(ctx: click.Context, config: str | None) -> None:
     "--output",
     "-o",
     type=click.Path(),
-    default=None,
-    help="Output dir (default: <config.paths.output>/polygonize/<years>/).",
-)
-@click.option("--area", "-a", default=None, help="Process a single tile (debug).")
-@click.pass_context
-def polygonize(
-    ctx: click.Context, start_year: int, end_year: int, output: str | None, area: str | None
-) -> None:
-    """Combine multi-year CDL → label-eliminate → simplify → GeoParquet."""
-    from csb.polygonize import run_polygonize
-
-    cfg = ctx.obj["config"]
-    out = (
-        Path(output)
-        if output
-        else Path(cfg["paths"]["output"]) / "polygonize" / f"{start_year}_{end_year}"
-    )
-    run_polygonize(cfg, start_year, end_year, out, area=area)
-
-
-@main.command()
-@click.argument("start_year", type=int)
-@click.argument("end_year", type=int)
-@click.option(
-    "--polygonize-dir",
-    type=click.Path(exists=True),
-    required=True,
-    help="Directory containing polygonize stage output.",
-)
-@click.option(
-    "--output",
-    "-o",
-    type=click.Path(),
-    default=None,
-    help="Output dir (default: <config.paths.output>/postprocess/<years>/).",
-)
-@click.pass_context
-def postprocess(
-    ctx: click.Context,
-    start_year: int,
-    end_year: int,
-    polygonize_dir: str,
-    output: str | None,
-) -> None:
-    """Enrich polygons with county/ASD attributes and split by state."""
-    from csb.postprocess import run_postprocess
-
-    cfg = ctx.obj["config"]
-    out = (
-        Path(output)
-        if output
-        else Path(cfg["paths"]["output"]) / "postprocess" / f"{start_year}_{end_year}"
-    )
-    run_postprocess(cfg, start_year, end_year, polygonize_dir, out)
-
-
-@main.command()
-@click.argument("start_year", type=int)
-@click.argument("end_year", type=int)
-@click.option(
-    "--output",
-    "-o",
-    type=click.Path(),
-    default=None,
-    help="Output dir (default: <config.paths.national_cdl>).",
+    default=DEFAULT_NATIONAL_CDL_DIR,
+    show_default=True,
+    help="Output directory for CDL TIFs.",
 )
 @click.option(
     "--resolution",
     "-r",
     type=click.Choice(["10", "30"]),
     default="30",
+    show_default=True,
     help="Pixel resolution in meters. 10m only for 2024+.",
 )
 @click.option("--overwrite", is_flag=True, help="Re-download existing files.")
-@click.option("--workers", "-w", type=int, default=4, help="Concurrent download workers.")
-@click.pass_context
+@click.option(
+    "--workers",
+    "-w",
+    type=int,
+    default=4,
+    show_default=True,
+    help="Concurrent download workers.",
+)
 def download(
-    ctx: click.Context,
-    start_year: int,
-    end_year: int,
-    output: str | None,
-    resolution: str,
-    overwrite: bool,
-    workers: int,
+    start_year: int, end_year: int, output: str, resolution: str, overwrite: bool, workers: int
 ) -> None:
     """Download USDA CDL rasters for the given year range."""
     from csb.download import download_cdl
 
-    cfg = ctx.obj["config"]
-    out = Path(output) if output else Path(cfg["paths"]["national_cdl"])
+    out = Path(output)
     years = list(range(start_year, end_year + 1))
     console.print(
         f"[bold]Downloading CDL {start_year}-{end_year} ({resolution}m) "
@@ -146,35 +99,263 @@ def download(
     "--output",
     "-o",
     type=click.Path(),
-    default=None,
-    help="Output path (default: <config.paths.boundaries>).",
+    default=DEFAULT_BOUNDARIES_PATH,
+    show_default=True,
+    help="Output GeoParquet path.",
 )
-@click.pass_context
-def build_boundaries(ctx: click.Context, output: str | None) -> None:
+def build_boundaries(output: str) -> None:
     """Build the ASD+county boundary GeoParquet from Census TIGER + NASS."""
     from csb.boundaries import build_boundaries as _build
 
-    cfg = ctx.obj["config"]
-    out = Path(output) if output else Path(cfg["paths"]["boundaries"])
-    _build(out)
+    _build(Path(output))
+
+
+# ---------------------------------------------------------------------------
+# Pipeline stages
+# ---------------------------------------------------------------------------
+
+
+def _polygonize_options(f):  # noqa: ANN001, ANN202 — Click decorator factory
+    """Shared --option flags for polygonize / run-all (so both stay in sync)."""
+    flags = [
+        click.option(
+            "--national-cdl-dir",
+            type=click.Path(exists=True, file_okay=False),
+            default=DEFAULT_NATIONAL_CDL_DIR,
+            show_default=True,
+            help="Directory containing per-year CDL TIFs.",
+        ),
+        click.option(
+            "--tile-size",
+            type=int,
+            default=DEFAULT_TILE_SIZE,
+            show_default=True,
+            help="Side length (px) of each processing tile.",
+        ),
+        click.option(
+            "--min-cropland-years",
+            type=int,
+            default=DEFAULT_MIN_CROPLAND_YEARS,
+            show_default=True,
+            help="Minimum number of cropland years to keep a pixel.",
+        ),
+        click.option(
+            "--eliminate-thresholds",
+            default=_DEFAULT_THRESHOLDS_STR,
+            show_default=True,
+            callback=_parse_thresholds,
+            help="Comma-separated area thresholds (m²) for the eliminate passes.",
+        ),
+        click.option(
+            "--min-polygon-area",
+            type=float,
+            default=DEFAULT_MIN_POLYGON_AREA,
+            show_default=True,
+            help="Drop polygons smaller than this (m²).",
+        ),
+        click.option(
+            "--simplify-tolerance",
+            type=float,
+            default=DEFAULT_SIMPLIFY_TOLERANCE,
+            show_default=True,
+            help="coverage_simplify tolerance in meters.",
+        ),
+        click.option(
+            "--cpu-fraction",
+            type=float,
+            default=DEFAULT_CPU_FRACTION,
+            show_default=True,
+            help="Fraction of CPUs to use for the worker pool.",
+        ),
+        click.option(
+            "--phase1-workers",
+            type=int,
+            default=None,
+            help="Phase-1 (raster-side) workers. Defaults to ~1/4 of cpu_fraction *cpu_count.",
+        ),
+        click.option(
+            "--phase2-workers",
+            type=int,
+            default=None,
+            help="Phase-2 (simplify) workers. Defaults to cpu_fraction *cpu_count.",
+        ),
+    ]
+    for opt in reversed(flags):
+        f = opt(f)
+    return f
+
+
+@main.command()
+@click.argument("start_year", type=int)
+@click.argument("end_year", type=int)
+@click.option(
+    "--output",
+    "-o",
+    type=click.Path(),
+    default=None,
+    help=f"Output dir (default: {DEFAULT_OUTPUT_DIR}/polygonize/<years>/).",
+)
+@click.option("--area", "-a", default=None, help="Process a single tile (debug).")
+@_polygonize_options
+def polygonize(
+    start_year: int,
+    end_year: int,
+    output: str | None,
+    area: str | None,
+    national_cdl_dir: str,
+    tile_size: int,
+    min_cropland_years: int,
+    eliminate_thresholds: tuple[float, ...],
+    min_polygon_area: float,
+    simplify_tolerance: float,
+    cpu_fraction: float,
+    phase1_workers: int | None,
+    phase2_workers: int | None,
+) -> None:
+    """Combine multi-year CDL → label-eliminate → simplify → GeoParquet."""
+    from csb.polygonize import run_polygonize
+
+    out = (
+        Path(output)
+        if output
+        else Path(DEFAULT_OUTPUT_DIR) / "polygonize" / f"{start_year}_{end_year}"
+    )
+    run_polygonize(
+        start_year=start_year,
+        end_year=end_year,
+        output_dir=out,
+        national_cdl_dir=national_cdl_dir,
+        tile_size=tile_size,
+        min_cropland_years=min_cropland_years,
+        eliminate_thresholds=eliminate_thresholds,
+        min_polygon_area=min_polygon_area,
+        simplify_tolerance=simplify_tolerance,
+        cpu_fraction=cpu_fraction,
+        phase1_workers=phase1_workers,
+        phase2_workers=phase2_workers,
+        area=area,
+    )
+
+
+@main.command()
+@click.argument("start_year", type=int)
+@click.argument("end_year", type=int)
+@click.option(
+    "--polygonize-dir",
+    type=click.Path(exists=True),
+    required=True,
+    help="Directory containing polygonize stage output.",
+)
+@click.option(
+    "--output",
+    "-o",
+    type=click.Path(),
+    default=None,
+    help=f"Output dir (default: {DEFAULT_OUTPUT_DIR}/postprocess/<years>/).",
+)
+@click.option(
+    "--boundaries",
+    type=click.Path(),
+    default=DEFAULT_BOUNDARIES_PATH,
+    show_default=True,
+    help="ASD+county boundary GeoParquet (from `csb build-boundaries`).",
+)
+@click.option(
+    "--cpu-fraction",
+    type=float,
+    default=DEFAULT_CPU_FRACTION,
+    show_default=True,
+    help="Fraction of CPUs to use for the worker pool.",
+)
+def postprocess(
+    start_year: int,
+    end_year: int,
+    polygonize_dir: str,
+    output: str | None,
+    boundaries: str,
+    cpu_fraction: float,
+) -> None:
+    """Enrich polygons with county/ASD attributes and split by state."""
+    from csb.postprocess import run_postprocess
+
+    out = (
+        Path(output)
+        if output
+        else Path(DEFAULT_OUTPUT_DIR) / "postprocess" / f"{start_year}_{end_year}"
+    )
+    run_postprocess(
+        start_year=start_year,
+        end_year=end_year,
+        polygonize_dir=Path(polygonize_dir),
+        output_dir=out,
+        boundaries_path=Path(boundaries),
+        cpu_fraction=cpu_fraction,
+    )
 
 
 @main.command(name="run-all")
 @click.argument("start_year", type=int)
 @click.argument("end_year", type=int)
-@click.option("--output", "-o", type=click.Path(), default=None, help="Root output directory.")
-@click.pass_context
-def run_all(ctx: click.Context, start_year: int, end_year: int, output: str | None) -> None:
+@click.option(
+    "--output",
+    "-o",
+    type=click.Path(),
+    default=DEFAULT_OUTPUT_DIR,
+    show_default=True,
+    help="Root output directory.",
+)
+@click.option(
+    "--boundaries",
+    type=click.Path(),
+    default=DEFAULT_BOUNDARIES_PATH,
+    show_default=True,
+    help="ASD+county boundary GeoParquet.",
+)
+@_polygonize_options
+def run_all(
+    start_year: int,
+    end_year: int,
+    output: str,
+    boundaries: str,
+    national_cdl_dir: str,
+    tile_size: int,
+    min_cropland_years: int,
+    eliminate_thresholds: tuple[float, ...],
+    min_polygon_area: float,
+    simplify_tolerance: float,
+    cpu_fraction: float,
+    phase1_workers: int | None,
+    phase2_workers: int | None,
+) -> None:
     """Run polygonize + postprocess back-to-back."""
     from csb.polygonize import run_polygonize
     from csb.postprocess import run_postprocess
 
-    cfg = ctx.obj["config"]
-    base = Path(output) if output else Path(cfg["paths"]["output"])
+    base = Path(output)
     tag = f"{start_year}_{end_year}"
     console.print(f"[bold]Running full CSB pipeline for {start_year}-{end_year}")
-    polygonize_dir = run_polygonize(cfg, start_year, end_year, base / "polygonize" / tag)
-    run_postprocess(cfg, start_year, end_year, polygonize_dir, base / "postprocess" / tag)
+    polygonize_dir = run_polygonize(
+        start_year=start_year,
+        end_year=end_year,
+        output_dir=base / "polygonize" / tag,
+        national_cdl_dir=national_cdl_dir,
+        tile_size=tile_size,
+        min_cropland_years=min_cropland_years,
+        eliminate_thresholds=eliminate_thresholds,
+        min_polygon_area=min_polygon_area,
+        simplify_tolerance=simplify_tolerance,
+        cpu_fraction=cpu_fraction,
+        phase1_workers=phase1_workers,
+        phase2_workers=phase2_workers,
+    )
+    run_postprocess(
+        start_year=start_year,
+        end_year=end_year,
+        polygonize_dir=polygonize_dir,
+        output_dir=base / "postprocess" / tag,
+        boundaries_path=Path(boundaries),
+        cpu_fraction=cpu_fraction,
+    )
     console.print(f"[bold green]Pipeline complete. Output: {base}")
 
 
@@ -205,7 +386,7 @@ def run_all(ctx: click.Context, start_year: int, end_year: int, output: str | No
     required=True,
     help="Where to write the indexed USDA parquet.",
 )
-@click.option("--threads", type=int, default=32)
+@click.option("--threads", type=int, default=32, show_default=True)
 def parity_prep(ours: str, ours_out: str, usda_gdb: str, usda_out: str, threads: int) -> None:
     """Hilbert-sort + add bbox columns to enable DuckDB row-group pruning."""
     from csb.parity import prep_inputs
@@ -232,7 +413,7 @@ def parity_prep(ours: str, ours_out: str, usda_gdb: str, usda_out: str, threads:
     default=None,
     help="JSON output path for the per-region report.",
 )
-@click.option("--threads", type=int, default=16)
+@click.option("--threads", type=int, default=16, show_default=True)
 def parity(ours: str, usda: str, report: str | None, threads: int) -> None:
     """Compare our CSB output against USDA ground truth across 16 regions."""
     from csb.parity import DEFAULT_REGIONS, run_parity, summarize
@@ -290,9 +471,11 @@ def parity(ours: str, usda: str, report: str | None, threads: int) -> None:
     help="Working dir for the FGB intermediate (default: alongside output).",
 )
 @click.option("--keep-fgb", is_flag=True, help="Keep the FlatGeobuf intermediate.")
-@click.option("--minimum-zoom", type=int, default=4)
-@click.option("--maximum-zoom", type=int, default=12)
-@click.option("--tippecanoe", default="tippecanoe", help="Path to tippecanoe binary.")
+@click.option("--minimum-zoom", type=int, default=4, show_default=True)
+@click.option("--maximum-zoom", type=int, default=12, show_default=True)
+@click.option(
+    "--tippecanoe", default="tippecanoe", show_default=True, help="Path to tippecanoe binary."
+)
 def pmtiles(
     input: str,
     output: str,
