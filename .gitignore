@@ -39,5 +39,6 @@ paper/*.blg
 paper/*.spl
 paper/pdflatex*.fls
 paper/texput.log
+texput.log
 paper/elsevier/
 paper/figures/hero_conus.png
