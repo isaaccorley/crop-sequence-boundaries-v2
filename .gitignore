@@ -36,6 +36,8 @@ paper/*.fls
 paper/*.fdb_latexmk
 paper/*.bbl
 paper/*.blg
+paper/*.spl
 paper/pdflatex*.fls
 paper/csb_icml2026.pdf
+paper/elsevier/
 paper/figures/hero_conus.png
