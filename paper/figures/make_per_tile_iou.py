@@ -1,4 +1,5 @@
 """Per-tile IoU + acres-ratio ranked bar chart for the 16 CONUS parity tiles."""
+
 import json
 from pathlib import Path
 
@@ -20,8 +21,7 @@ fig, ax = plt.subplots(figsize=(6.6, 3.4))
 y = np.arange(len(results))[::-1]
 
 ax.barh(y, ious, color="#2c5f8d", edgecolor="white", lw=0.4, height=0.7, label="IoU")
-ax.scatter(acres, y, s=22, c="#d4801a", edgecolor="white", lw=0.5, zorder=3,
-           label="acres ratio")
+ax.scatter(acres, y, s=22, c="#d4801a", edgecolor="white", lw=0.5, zorder=3, label="acres ratio")
 ax.axvline(1.0, color="0.5", lw=0.7, ls="--", zorder=1)
 ax.axvline(np.mean(ious), color="#2c5f8d", lw=0.7, ls=":", alpha=0.7, zorder=1)
 

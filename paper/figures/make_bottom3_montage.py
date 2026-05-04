@@ -2,9 +2,9 @@
 
 One panel per tile: shared = grey, ours-only = blue, USDA-only = red.
 """
-from pathlib import Path
 
 import sys
+from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 
@@ -12,23 +12,36 @@ import duckdb
 import matplotlib.pyplot as plt
 import numpy as np
 import shapely
-from csb.parity import find_bbox_5070
 from matplotlib.collections import PolyCollection
 
+from csb.parity import find_bbox_5070
+
 ROOT = Path(__file__).resolve().parents[2]
-OURS = ROOT / "data" / "output" / "conus" / "postprocess" / "2018_2025" / "national" / "CSB1825_indexed.parquet"
+OURS = (
+    ROOT
+    / "data"
+    / "output"
+    / "conus"
+    / "postprocess"
+    / "2018_2025"
+    / "national"
+    / "CSB1825_indexed.parquet"
+)
 USDA = ROOT / "data" / "CSB1825_indexed.parquet"
 OUT = Path(__file__).resolve().parent / "bottom3_montage.pdf"
 
 # (region, tx, ty, label, IoU)
 TILES = [
     ("GA peanut/cotton", 950_000, 1_100_000, "Georgia peanut", 0.543),
-    ("Central TX cotton", -350_000, 900_000, "Texas cotton",  0.690),
+    ("Central TX cotton", -350_000, 900_000, "Texas cotton", 0.690),
     ("Central Valley CA", -2_000_000, 1_650_000, "Central Valley CA", 0.771),
 ]
-def _query(parquet: Path, bx0, by0, bx1, by1):
+
+
+def _query(parquet: Path, bx0: float, by0: float, bx1: float, by1: float) -> list[shapely.Geometry]:
     conn = duckdb.connect()
-    conn.install_extension("spatial"); conn.load_extension("spatial")
+    conn.install_extension("spatial")
+    conn.load_extension("spatial")
     rows = conn.execute(f"""
         SELECT ST_AsWKB(ST_MakeValid(geometry))
         FROM read_parquet('{parquet}')
@@ -41,23 +54,22 @@ def _query(parquet: Path, bx0, by0, bx1, by1):
     return [g for g in geoms if g is not None and not g.is_empty]
 
 
-def _flatten_paths(geoms):
+def _flatten_paths(geoms: list[shapely.Geometry]) -> list[np.ndarray]:
     parts = shapely.get_parts(geoms)
     parts = parts[shapely.get_type_id(parts) == 3]
     return [np.asarray(p.exterior.coords) for p in parts if not p.is_empty]
 
 
-def _draw_collection(ax, paths, fc):
+def _draw_collection(ax: plt.Axes, paths: list[np.ndarray], fc: str) -> None:
     if not paths:
         return
-    coll = PolyCollection(paths, facecolor=fc, edgecolor="none", linewidth=0,
-                          rasterized=True)
+    coll = PolyCollection(paths, facecolor=fc, edgecolor="none", linewidth=0, rasterized=True)
     ax.add_collection(coll)
 
 
 fig, axes = plt.subplots(1, 3, figsize=(7.0, 2.5))
 
-for ax, (full_name, tx, ty, label, iou) in zip(axes, TILES):
+for ax, (_full_name, tx, ty, label, iou) in zip(axes, TILES, strict=True):
     bx0, by0, bx1, by1 = find_bbox_5070(tx, ty)
     print(f"loading {label} bbox=({bx0:.0f},{by0:.0f})..({bx1:.0f},{by1:.0f})")
     ours = _query(OURS, bx0, by0, bx1, by1)
@@ -89,7 +101,8 @@ for ax, (full_name, tx, ty, label, iou) in zip(axes, TILES):
     ax.set_yticks([])
     ax.set_title(f"{label}  (IoU {iou:.2f})", fontsize=9)
     for spine in ax.spines.values():
-        spine.set_edgecolor("0.7"); spine.set_linewidth(0.5)
+        spine.set_edgecolor("0.7")
+        spine.set_linewidth(0.5)
 
 # Shared legend
 legend_handles = [
@@ -97,9 +110,16 @@ legend_handles = [
     plt.Rectangle((0, 0), 1, 1, fc="#2c5f8d", ec="none"),
     plt.Rectangle((0, 0), 1, 1, fc="#c0392b", ec="none"),
 ]
-fig.legend(legend_handles, ["shared", "ours only", "USDA only"],
-           loc="lower center", bbox_to_anchor=(0.5, -0.04),
-           ncol=3, fontsize=8, frameon=False, handlelength=1.2)
+fig.legend(
+    legend_handles,
+    ["shared", "ours only", "USDA only"],
+    loc="lower center",
+    bbox_to_anchor=(0.5, -0.04),
+    ncol=3,
+    fontsize=8,
+    frameon=False,
+    handlelength=1.2,
+)
 
 fig.tight_layout()
 fig.savefig(OUT, bbox_inches="tight", dpi=300)

@@ -13,6 +13,7 @@ repos:
       - id: check-json
       - id: sort-simple-yaml
       - id: pretty-format-json
+        args: ["--autofix", "--indent=2"]
       - id: debug-statements
       - id: check-added-large-files
         args: ['--maxkb=1000']
@@ -42,10 +43,7 @@ repos:
         args: [--python=.venv/]
         pass_filenames: false
 
-  - repo: local
+  - repo: https://github.com/astral-sh/uv-pre-commit
+    rev: 0.11.8
     hooks:
       - id: uv-lock
-        name: Lock dependencies with uv
-        entry: uv lock
-        language: system
-        pass_filenames: false

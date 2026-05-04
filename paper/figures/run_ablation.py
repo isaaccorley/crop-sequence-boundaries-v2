@@ -3,8 +3,8 @@
 Runs polygonize variants on a single 5000x5000 tile and compares each
 against USDA CSB1825 over the same bbox using the inclusion-exclusion IoU.
 """
+
 import json
-import shutil
 import subprocess
 import time
 from pathlib import Path
@@ -21,10 +21,10 @@ I15_BBOX = (-106095.0, 1822605.0, 43905.0, 1972605.0)
 USDA_ACRES_PER_M2 = 1.0 / 4046.8564224
 
 VARIANTS = [
-    {"id": "default",      "label": "default (s=60, dissolve)",         "simplify": 60.0,  "dissolve": True},
-    {"id": "s30",          "label": "simplify 30 m",                    "simplify": 30.0,  "dissolve": True},
-    {"id": "s120",         "label": "simplify 120 m",                   "simplify": 120.0, "dissolve": True},
-    {"id": "no_dissolve",  "label": "no same-combo dissolve",           "simplify": 60.0,  "dissolve": False},
+    {"id": "default", "label": "default (s=60, dissolve)", "simplify": 60.0, "dissolve": True},
+    {"id": "s30", "label": "simplify 30 m", "simplify": 30.0, "dissolve": True},
+    {"id": "s120", "label": "simplify 120 m", "simplify": 120.0, "dissolve": True},
+    {"id": "no_dissolve", "label": "no same-combo dissolve", "simplify": 60.0, "dissolve": False},
 ]
 
 
@@ -36,12 +36,22 @@ def run_polygonize(variant: dict) -> Path:
         print(f"[{variant['id']}] cached at {target}")
         return target
     cmd = [
-        "uv", "run", "csb", "polygonize", "2018", "2025",
-        "--output", str(out),
-        "--area", TILE,
-        "--simplify-tolerance", str(variant["simplify"]),
-        "--phase1-workers", "1",
-        "--phase2-workers", "1",
+        "uv",
+        "run",
+        "csb",
+        "polygonize",
+        "2018",
+        "2025",
+        "--output",
+        str(out),
+        "--area",
+        TILE,
+        "--simplify-tolerance",
+        str(variant["simplify"]),
+        "--phase1-workers",
+        "1",
+        "--phase2-workers",
+        "1",
     ]
     if not variant["dissolve"]:
         cmd.append("--no-same-combo-dissolve")
@@ -52,6 +62,18 @@ def run_polygonize(variant: dict) -> Path:
     variant["wall_sec"] = elapsed
     print(f"[{variant['id']}] wall {elapsed:.1f} s")
     return target
+
+
+def _scalar(conn: duckdb.DuckDBPyConnection, sql: str, default: float = 0.0) -> float:
+    """Run ``sql`` and return the first column of the first row, or ``default``.
+
+    DuckDB's ``fetchone()`` is typed ``Optional[tuple]`` so naive subscripting
+    trips ``ty``; this helper narrows the return type for the static checker.
+    """
+    row = conn.execute(sql).fetchone()
+    if row is None or row[0] is None:
+        return default
+    return row[0]
 
 
 def parity(ours_parquet: Path) -> dict:
@@ -73,13 +95,20 @@ def parity(ours_parquet: Path) -> dict:
         f"WHERE xmax >= {bx0} AND xmin <= {bx1} AND ymax >= {by0} AND ymin <= {by1} "
         f"  AND ST_Intersects(geometry, {env})"
     )
-    n_ours = conn.execute("SELECT COUNT(*) FROM ours").fetchone()[0]
-    n_usda = conn.execute("SELECT COUNT(*) FROM usda").fetchone()[0]
-    acres_ours = conn.execute(f"SELECT SUM(ST_Area(ST_Intersection(g, {env}))) * {USDA_ACRES_PER_M2} FROM ours").fetchone()[0] or 0.0
-    acres_usda = conn.execute("SELECT SUM(CSBACRES) FROM usda").fetchone()[0] or 0.0
-    ours_km2 = conn.execute(f"SELECT SUM(ST_Area(ST_Intersection(g, {env})))/1e6 FROM ours").fetchone()[0] or 0.0
-    usda_km2 = conn.execute(f"SELECT SUM(ST_Area(ST_Intersection(g, {env})))/1e6 FROM usda").fetchone()[0] or 0.0
-    inter = conn.execute("SELECT SUM(ST_Area(ST_Intersection(o.g, u.g)))/1e6 FROM ours o JOIN usda u ON ST_Intersects(o.g, u.g)").fetchone()[0] or 0.0
+    n_ours = int(_scalar(conn, "SELECT COUNT(*) FROM ours"))
+    n_usda = int(_scalar(conn, "SELECT COUNT(*) FROM usda"))
+    acres_ours = _scalar(
+        conn,
+        f"SELECT SUM(ST_Area(ST_Intersection(g, {env}))) * {USDA_ACRES_PER_M2} FROM ours",
+    )
+    acres_usda = _scalar(conn, "SELECT SUM(CSBACRES) FROM usda")
+    ours_km2 = _scalar(conn, f"SELECT SUM(ST_Area(ST_Intersection(g, {env})))/1e6 FROM ours")
+    usda_km2 = _scalar(conn, f"SELECT SUM(ST_Area(ST_Intersection(g, {env})))/1e6 FROM usda")
+    inter = _scalar(
+        conn,
+        "SELECT SUM(ST_Area(ST_Intersection(o.g, u.g)))/1e6 "
+        "FROM ours o JOIN usda u ON ST_Intersects(o.g, u.g)",
+    )
     union = ours_km2 + usda_km2 - inter
     return {
         "n_ours": int(n_ours),

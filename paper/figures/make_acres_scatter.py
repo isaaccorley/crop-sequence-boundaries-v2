@@ -1,4 +1,5 @@
 """Acreage parity scatter (Bland-Altman + 1:1) over 16 CONUS tiles."""
+
 import json
 from pathlib import Path
 
@@ -37,7 +38,9 @@ ax2.axhline(md - 1.96 * sd, color="#c0392b", lw=0.7, ls=":")
 ax2.scatter(mean, diff_pct, s=22, c="#1f4e79", edgecolor="white", lw=0.5)
 ax2.set_xlabel("mean acres ($\\times 10^6$)")
 ax2.set_ylabel("(ours $-$ USDA) / USDA  [\\%]")
-ax2.set_title(f"(b) Bland--Altman, mean {md:+.1f}\\%, $\\pm$1.96$\\sigma$ = {1.96*sd:.1f}\\%", fontsize=10)
+ax2.set_title(
+    f"(b) Bland--Altman, mean {md:+.1f}\\%, $\\pm$1.96$\\sigma$ = {1.96 * sd:.1f}\\%", fontsize=10
+)
 ax2.grid(alpha=0.25, lw=0.4)
 
 fig.tight_layout()
