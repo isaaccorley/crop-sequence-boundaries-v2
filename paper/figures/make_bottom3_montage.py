@@ -50,7 +50,8 @@ def _flatten_paths(geoms):
 def _draw_collection(ax, paths, fc):
     if not paths:
         return
-    coll = PolyCollection(paths, facecolor=fc, edgecolor="none", linewidth=0)
+    coll = PolyCollection(paths, facecolor=fc, edgecolor="none", linewidth=0,
+                          rasterized=True)
     ax.add_collection(coll)
 
 
@@ -101,5 +102,5 @@ fig.legend(legend_handles, ["shared", "ours only", "USDA only"],
            ncol=3, fontsize=8, frameon=False, handlelength=1.2)
 
 fig.tight_layout()
-fig.savefig(OUT, bbox_inches="tight")
+fig.savefig(OUT, bbox_inches="tight", dpi=300)
 print(f"wrote {OUT}")
