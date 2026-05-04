@@ -45,8 +45,8 @@ non-dissolving inclusion--exclusion estimator for polygon-coverage IoU. The
 pipeline produces the full 15.30~M polygon CONUS dataset in 25.2~min on a
 single 32-core node at \$0.63 of AWS spot compute (\$2 including PMTiles and
 parity sweep). Conditioned on parity at mean IoU 0.846 (median 0.897; min
-0.543 on sparse-cropland tiles where USDA's road/rail mask, which we do not
-yet replicate, dominates) across 16 geospatially diverse $5000^2$-pixel
+0.543 on sparse-cropland tiles where sub-hectare field geometry and
+simplification interactions dominate) across 16 geospatially diverse $5000^2$-pixel
 CONUS tiles, this is a $287\times$ wall-clock and $\sim$860$\times$ per-core
 reduction relative to the ArcGIS reference.
 \end{abstract}
@@ -130,10 +130,11 @@ Our contributions are:
 \centering
 \includegraphics[width=\linewidth]{figures/hero_conus.pdf}
 \caption{\textbf{CONUS Crop Sequence Boundaries.} 15.30~M polygons,
-2018--2025 CDL combine, generated end-to-end on a single 32-core node in
-25.2 minutes. Inset: visual diff against USDA CSB1825 over an Iowa tile;
-shared boundaries in grey, ours-only in blue, USDA-only in red. Total
-acreage matches USDA within 2\% in median.}
+2018--2025 CDL combine, generated end-to-end on a single 32-core node
+in 25.2 minutes from CDL rasters and an Overture-derived road/rail
+mask. Inset: visual diff against USDA CSB1825 over an Iowa tile;
+shared boundaries in grey, ours-only in blue, USDA-only in red. Median
+acreage parity within 2\%.}
 \label{fig:hero}
 \end{figure}
 
@@ -637,14 +638,31 @@ Nine of the sixteen tiles clear $\text{IoU} \geq 0.89$. The three
 lowest-IoU tiles are GA peanut (0.543), TX cotton (0.690), and CA
 Central Valley (0.771). All three are sparse-cropland regions: the
 denominator $A_\cup$ is small, so absolute boundary disagreements drive
-a large relative IoU drop. Two specific factors contribute. First, the
-USDA pipeline includes a Google Earth Engine pass that re-imposes a
-road and rail mask onto the cropland polygons, splitting fields along
-linear features the CDL itself does not capture; we do not yet
-replicate this. Second, smallholder field geometry in the Texas--Georgia
-peanut belt and the irrigated patchwork of California's Central Valley
-are dominated by sub-hectare boundaries on which simplification
-tolerance choices have outsized influence.
+a large relative IoU drop. Smallholder field geometry in the
+Texas--Georgia peanut belt and the irrigated patchwork of California's
+Central Valley are dominated by sub-hectare boundaries on which
+simplification tolerance interacts with the cropland-mask threshold:
+a single missed pixel along a 30~m field edge can split a polygon
+that USDA retains as a unit, or vice-versa. Adopting USDA's road/rail
+mask via Overture Maps~\cite{overture} (already integrated in our
+production runs through \texttt{csb roads-prep} and the
+\texttt{--roads-mask} flag) closes a portion of the gap on
+mid-density tiles but does not lift these three sparse-cropland
+outliers, which are dominated by per-pixel boundary disagreements
+rather than missing linear features.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\linewidth]{figures/bottom3_montage.pdf}
+\caption{\textbf{Visual diff at the three lowest-IoU tiles.} For each
+$5000^2$-pixel tile, agreement is grey, ours-only is blue, USDA-only
+is red. The disagreement pattern is dominated by sub-hectare boundary
+displacement and per-pixel mask differences, not large connected
+regions where one side claims cropland and the other does not---the
+denominator $A_\cup$ is small in these sparse-cropland tiles, so even
+small absolute disagreements drive a large relative IoU drop.}
+\label{fig:bottom3-montage}
+\end{figure}
 
 \subsection{Per-class agreement vs.\ USDA CSB1825}
 \label{sec:results-per-class}
@@ -867,10 +885,15 @@ attributes encode multi-year crop history.
 \section{Limitations}
 \label{sec:limits}
 
-\paragraph{Road and rail re-imposition.} The USDA pipeline applies a
-GEE-derived transportation mask we do not replicate. We plan to use
-the Overture Maps transportation theme~\cite{overture} as an
-open-source substitute; a preliminary implementation is in progress.
+\paragraph{Road and rail mask source.} USDA's CSB pipeline rebuilds
+its transportation mask each year from a Google Earth Engine pass over
+proprietary basemap data. We instead pre-rasterise the open Overture
+Maps transportation theme~\cite{overture} (\texttt{csb roads-prep}) and
+apply the buffered raster as a mask to the cropland layer prior to
+connected-components labelling. The two masks differ in temporal
+currency (Overture is community-edited and updated more frequently)
+and in coverage of unpaved farm tracks; quantifying their parity is
+left to future work.
 
 \paragraph{Eight-year horizon.} The \texttt{uint64} bit-packing fits
 exactly $8 \cdot 8 = 64$~bits. Longer horizons require either a
