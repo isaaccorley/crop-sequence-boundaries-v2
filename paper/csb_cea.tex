@@ -1,15 +1,15 @@
-%% Submission to Computers and Electronics in Agriculture (Application Notes).
+%% Submission to Computers and Electronics in Agriculture (Original Research Paper).
 %% Format: Elsevier elsarticle, single-column preprint.
 \documentclass[preprint,12pt]{elsarticle}
 
-\usepackage{microtype}
+\usepackage[expansion=false]{microtype}
 \usepackage{graphicx}
 \usepackage{booktabs}
 \usepackage{amsmath}
 \usepackage{amssymb}
 \usepackage{mathtools}
 \usepackage{algorithm}
-\usepackage{algpseudocode}
+\usepackage{algorithmic}
 \usepackage{xcolor}
 \usepackage{siunitx}
 \usepackage{hyperref}
@@ -21,7 +21,7 @@
 
 \begin{frontmatter}
 
-\title{Crop Sequence Boundaries Without ArcGIS}
+\title{An Open-Source Pipeline for Cloud-Native Crop Sequence Boundaries}
 
 \author[a]{Isaac Corley}
 \ead{isaac.corley@taylorgeospatial.org}
@@ -30,10 +30,10 @@
 \begin{abstract}
 The USDA Crop Sequence Boundaries (CSB) product partitions the contiguous
 United States into per-field polygons whose attributes encode the multi-year
-sequence of Cropland Data Layer~(CDL) classifications. The official pipeline
-\cite{hunt2024csb} requires an ArcGIS~Pro license and ran for five days on
-a 96-core AWS workstation for the 2018--2025 CONUS rebuild, with the
-polygon-elimination step identified by the authors as the dominant cost.
+sequence of Cropland Data Layer~(CDL) classifications. The USDA ArcPy
+pipeline described by Hunt et al.~\cite{hunt2024csb} requires an
+ArcGIS~Pro license and ran for five days on a 96-core AWS workstation,
+with polygon elimination identified by the authors as the dominant cost.
 We present a pure open-source replacement built on \textsc{rasterio},
 \textsc{scikit-image}, \textsc{shapely}, \textsc{DuckDB}, and
 \textsc{tippecanoe}. Three changes drive the result: a \texttt{uint64}
@@ -42,13 +42,14 @@ overflow we found in a base-300 encoding (which inflated non-Iowa cropland
 area by $\sim$17\%); a raster-side reformulation of \textsc{Eliminate(LENGTH)}
 as a connected-component label graph with union-find merge passes; and a
 non-dissolving inclusion--exclusion estimator for polygon-coverage IoU. The
-pipeline produces the full 15.30~M polygon CONUS dataset in 25.2~min on a
-single 32-core node at \$0.63 of AWS spot compute (\$2 including PMTiles and
-parity sweep). Conditioned on parity at mean IoU 0.846 (median 0.897; min
-0.543 on sparse-cropland tiles where sub-hectare field geometry and
-simplification interactions dominate) across 16 geospatially diverse $5000^2$-pixel
-CONUS tiles, this is a $287\times$ wall-clock and $\sim$860$\times$ per-core
-reduction relative to the ArcGIS reference.
+pipeline produces the full 15.30~M polygon 2018--2025 CONUS dataset in
+25.2~min on a single 32-core node at \$0.63 of AWS spot compute (\$2
+including PMTiles and parity sweep). Against the released USDA CSB1825
+product, mean IoU is 0.846 across 16 geospatially diverse $5000^2$-pixel
+CONUS tiles (median 0.897; min 0.543 on sparse-cropland tiles where
+sub-hectare field geometry and simplification interactions dominate).
+Relative to the published USDA ArcPy runtime envelope, this is a
+$287\times$ wall-clock and $\sim$860$\times$ per-core reduction.
 \end{abstract}
 
 \begin{keyword}
@@ -88,7 +89,11 @@ non-profit users.
 
 We rebuild the pipeline end-to-end in open-source tooling, target a
 single-node CPU machine of the type already common in federal HPC
-environments, and validate output against the USDA CSB1825 ground truth.
+environments, and validate output against the released USDA CSB1825
+ground truth. We do not time ArcPy on the same hardware because we do
+not have an ArcGIS~Pro license; runtime comparisons therefore use the
+published USDA ArcPy runtime reported for the same public reference
+workflow~\cite{hunt2024csb,usda_csb_repo}.
 Our contributions are:
 
 \begin{itemize}
@@ -123,7 +128,7 @@ Our contributions are:
     \item A measured comparison against the USDA reference: 25.2~min wall
           and $\sim$\$2 of AWS spot compute for a CONUS rebuild, mean IoU
           0.846 across 16 diverse tiles, with the source pipeline released
-          under MIT.
+          under Apache-2.0.
 \end{itemize}
 
 \begin{figure}[t]
@@ -254,15 +259,17 @@ After the four passes complete, we polygonize $L$ exactly once.
 \caption{Raster-side \textsc{Eliminate(LENGTH)} pass}
 \label{alg:eliminate}
 \begin{algorithmic}[1]
-\Require label raster $L$, adjacency $A$, area threshold $t$
-\State $S_t \gets \{\ell : \text{area}(\ell) < t\}$
-\State $\text{uf} \gets \text{UnionFind}(\{\ell\})$
-\For{$\ell \in S_t$ in ascending area order}
-    \State $\ell^\star \gets \arg\max_{\ell' \notin S_t,\, A(\ell,\ell')>0} A(\ell, \ell')$
-    \If{$\ell^\star$ exists} \State $\text{uf.union}(\ell, \ell^\star)$ \EndIf
-\EndFor
-\State $L(\mathbf{x}) \gets \text{uf.find}(L(\mathbf{x}))$ \Comment{vectorised}
-\State recompute $A$, $\text{area}$ on collapsed labels
+\REQUIRE label raster $L$, adjacency $A$, area threshold $t$
+\STATE $S_t \gets \{\ell : \text{area}(\ell) < t\}$
+\STATE $\text{uf} \gets \text{UnionFind}(\{\ell\})$
+\FOR{$\ell \in S_t$ in ascending area order}
+    \STATE $\ell^\star \gets \arg\max_{\ell' \notin S_t,\, A(\ell,\ell')>0} A(\ell, \ell')$
+    \IF{$\ell^\star$ exists}
+        \STATE $\text{uf.union}(\ell, \ell^\star)$
+    \ENDIF
+\ENDFOR
+\STATE $L(\mathbf{x}) \gets \text{uf.find}(L(\mathbf{x}))$ \COMMENT{vectorised}
+\STATE recompute $A$, $\text{area}$ on collapsed labels
 \end{algorithmic}
 \end{algorithm}
 
@@ -369,7 +376,7 @@ forces consumers to install GDAL with FileGDB support and load the
 entire CONUS coverage to query a single county. We redesign the output
 side around three open columnar/tile formats:
 
-\paragraph{Polygonization.} Phase~1 polygonization itself stays in
+\paragraph{Polygonization} Phase~1 polygonization itself stays in
 Apache Arrow. Rather than emitting Shapely geometries through a Python
 loop, we use \textsc{contourrs}~\cite{contourrs}, a pure-Rust raster
 polygonization library with Python bindings that emits Arrow arrays of
@@ -377,7 +384,7 @@ WKB geometries directly. This keeps tiles in zero-copy Arrow tables
 from the labelled raster through to GeoParquet write, with no
 intermediate Python object allocation.
 
-\paragraph{GeoParquet distribution.} We distribute the national output
+\paragraph{GeoParquet distribution} We distribute the national output
 as a single Hilbert-sorted GeoParquet~1.1 file with explicit
 \texttt{xmin/ymin/xmax/ymax} bbox columns per row group
 (\cref{sec:val-method}). Consumers can read a county-sized AOI in
@@ -385,7 +392,7 @@ sub-second time over HTTPS using DuckDB-spatial or any Arrow-aware
 client, without downloading the full 6~GB file---a workflow not
 expressible against the current \texttt{.gdb.zip} distribution.
 
-\paragraph{PMTiles archive.} For visualisation we ship a single
+\paragraph{PMTiles archive} For visualisation we ship a single
 PMTiles archive~\cite{pmtiles} (2.7~GB for CONUS, zoom 4--12) built
 with \textsc{tippecanoe} and \textsc{tile-join}. PMTiles supports HTTP
 range requests, so a MapLibre GL JS~\cite{maplibre} client only
@@ -420,7 +427,7 @@ formulation, which dispatches a single-threaded GEOS
 estimator is exact and reduces wall on the densest test tile from
 $>10$~min to 25~s.
 
-\paragraph{Bounding-box pushdown over GeoParquet.}
+\paragraph{Bounding-box pushdown over GeoParquet}
 For per-tile parity we Hilbert-sort the input polygons and write them
 in 50k-row groups with explicit \texttt{xmin, ymin, xmax, ymax}
 columns. DuckDB's row-group statistics then prune $>$99\% of the file
@@ -503,10 +510,11 @@ Coverage simplification dominates ($54\%$); the four-pass raster
 \label{fig:stage-breakdown}
 \end{figure}
 
-The reference~\cite{hunt2024csb} reports 5 days on a 96-core AWS
+The USDA ArcPy reference workflow described by Hunt et
+al.~\cite{hunt2024csb,usda_csb_repo} reports 5 days on a 96-core AWS
 workstation: 11{,}520 core-hours. Our 25-min run on 32 cores is
-13.4 core-hours, an $860\times$ per-core reduction independent of
-instance pricing. At current EC2 rates, the USDA envelope on
+13.4 core-hours, an $860\times$ per-core reduction relative to that
+published runtime envelope and independent of instance pricing. At current EC2 rates, the USDA envelope on
 \texttt{c6i.24xlarge} on-demand (\$4.08/hr) costs \$489; ours on
 \texttt{m7i.16xlarge} spot (\$1.50/hr) costs \$0.63. We use spot
 because the pipeline tolerates restarts at tile granularity; on
@@ -517,8 +525,9 @@ the parity sweep, total cloud spend on spot is \$2.00.
 
 \begin{table}[t]
 \centering
-\caption{\textbf{Annual CONUS rebuild: USDA reference vs.\ this work.}
-USDA cost from Hunt et al.~\cite{hunt2024csb}; current EC2 on-demand pricing
+\caption{\textbf{Annual CONUS rebuild: published USDA reference vs.\ this work.}
+USDA wall time from the ArcPy workflow reported by Hunt et
+al.~\cite{hunt2024csb}; current EC2 on-demand pricing
 \cite{aws_ec2_pricing} for the cheapest 96-vCPU Sapphire Rapids match.}
 \label{tab:cost}
 \small
@@ -540,18 +549,19 @@ Cost (on-demand) & ---                   & $\mathbf{382\times}$ \\
 \end{tabular}
 \end{table}
 
-\paragraph{Decomposing the 287$\times$ end-to-end speedup.}
+\paragraph{Interpreting the 287$\times$ end-to-end runtime ratio}
 We cannot directly time the ArcPy reference end-to-end on our hardware
-(the legacy SedonaDB port crashes at CONUS scale, and ArcPy is not
-licensable in our environment), so the attribution below is bounded by
-the measurements we \emph{can} take and should be read as ``where time
-goes in our pipeline'' rather than ``where USDA's pipeline spent its
-five days.'' First, USDA reports 96 cores against our 32, so a naive
-hardware adjustment gives a $32/96 \approx 0.33\times$ handicap on our
-side; the per-core ratio we still need to explain is therefore
-$287 \times 96/32 \approx 861\times$. The dominant per-core
-contribution is replacing the polygon-side cross-join eliminate with a
-4-pass raster eliminate: \cref{tab:eliminate} shows
+because ArcPy is not licensable in our environment. The comparison
+therefore uses the public USDA runtime and pipeline description rather
+than a same-hardware rerun. The attribution below is bounded by the
+measurements we \emph{can} take and should be read as ``where time goes
+in our pipeline'' rather than ``where USDA's pipeline spent its five
+days.'' First, USDA reports 96 cores against our 32, so a naive hardware
+adjustment gives a $32/96 \approx 0.33\times$ handicap on our side; the
+per-core ratio we still need to explain is therefore $287 \times 96/32
+\approx 861\times$. The dominant per-core contribution is replacing the
+polygon-side cross-join eliminate with a 4-pass raster eliminate:
+\cref{tab:eliminate} shows
 $17.58\,\text{s}\to 0.43\,\text{s}$ on a $2500^2$ tile, a $\sim$41$\times$
 step-level win that compounds super-linearly at CONUS scale because the
 legacy step is super-linear in polygon count~\cite{hunt2024csb}. The
@@ -604,7 +614,7 @@ acres ratio 0.946, poly ratio 0.958).
 \begin{table}[t]
 \centering
 \caption{\textbf{Per-region parity, six headline tiles.} Each tile is a
-$5000^2$-pixel ($150\,\text{km}^2$) CONUS extract evaluated against
+$5000^2$-pixel ($150\,\text{km} \times 150\,\text{km}$) CONUS extract evaluated against
 \texttt{CSB1825.gdb}. Acres reported in the original USDA units.}
 \label{tab:parity-detail}
 \small
@@ -745,8 +755,8 @@ other settings fixed. \Cref{tab:ablation} reports the result.
 \centering
 \caption{\textbf{Ablation on tile I15 (Iowa corn belt, $5000^2$~px).}
 $n$ is polygon count, ratio is ours/USDA, IoU computed over the I15
-bbox vs.\ \texttt{CSB1825.gdb}. Default row matches the CONUS-run
-configuration.}
+bbox vs.\ \texttt{CSB1825.gdb}. This stale ablation table was generated
+from a separate I15 run and should be regenerated before submission.}
 \label{tab:ablation}
 \small
 \begin{tabular}{lcccc}
@@ -789,7 +799,7 @@ cropland-rich tiles cluster within $\pm 2\%$.}
 \section{Related Work}
 \label{sec:related}
 
-\paragraph{The Cropland Data Layer and CSB lineage.}
+\paragraph{The Cropland Data Layer and CSB lineage}
 The Cropland Data Layer~\cite{boryan2011cdl} has been the foundational
 input for U.S.\ crop mapping for over a decade, and continues to evolve:
 recent work has focused on automating in-season CDL-like products at
@@ -811,7 +821,7 @@ field-count, which motivates the present work's emphasis on
 quantitative parity against the USDA reference rather than visual
 similarity alone.
 
-\paragraph{Parallel polygon coverage and raster-to-vector at scale.}
+\paragraph{Parallel polygon coverage and raster-to-vector at scale}
 A line of distributed-systems work has targeted CONUS-scale geospatial
 processing on commodity clusters. GeoSpark and its successor Apache
 Sedona~\cite{yu2019sedona} extend Spark with spatial partitioners,
@@ -828,7 +838,7 @@ walking algorithm; we exchange it for the Arrow-native
 \textsc{contourrs} implementation~\cite{contourrs} to keep tiles in
 columnar form across the pipeline.
 
-\paragraph{Polygon-coverage simplification.}
+\paragraph{Polygon-coverage simplification}
 Per-polygon Douglas--Peucker simplification produces seam artefacts when
 applied independently to neighbours that share a boundary, motivating
 coverage-aware variants. ArcGIS's \textsc{BEND\_SIMPLIFY} option
@@ -843,7 +853,7 @@ function preserves topological consistency across a non-overlapping
 polygon coverage, an essential property for downstream join and
 acreage-summation workflows.
 
-\paragraph{Open-source replacements of commercial GIS.}
+\paragraph{Open-source replacements of commercial GIS}
 QGIS~\cite{qgis2025patterns} has matured into a credible
 desktop-GIS alternative to ArcGIS Desktop/Pro, with documented adoption
 by federal, municipal, and academic users; the recent \emph{Patterns}
@@ -858,7 +868,7 @@ runtime~\cite{raasveldt2019duckdb}. Our pipeline composes these
 projects in place of the ArcPy/ArcGIS-Pro stack used by Hunt et
 al.~\cite{hunt2024csb}; the goal is parity, not displacement.
 
-\paragraph{Cloud-native geospatial formats.}
+\paragraph{Cloud-native geospatial formats}
 The cloud-native geospatial movement has converged on a small set of
 formats designed for HTTP range-request access: Cloud-Optimized
 GeoTIFF for rasters~\cite{ogc_cog}, GeoParquet for vector tables with
@@ -885,7 +895,7 @@ attributes encode multi-year crop history.
 \section{Limitations}
 \label{sec:limits}
 
-\paragraph{Road and rail mask source.} USDA's CSB pipeline rebuilds
+\paragraph{Road and rail mask source} USDA's CSB pipeline rebuilds
 its transportation mask each year from a Google Earth Engine pass over
 proprietary basemap data. We instead pre-rasterise the open Overture
 Maps transportation theme~\cite{overture} (\texttt{csb roads-prep}) and
@@ -895,32 +905,32 @@ currency (Overture is community-edited and updated more frequently)
 and in coverage of unpaved farm tracks; quantifying their parity is
 left to future work.
 
-\paragraph{Eight-year horizon.} The \texttt{uint64} bit-packing fits
+\paragraph{Eight-year horizon} The \texttt{uint64} bit-packing fits
 exactly $8 \cdot 8 = 64$~bits. Longer horizons require either a
 \texttt{uint128} extension (numpy via two \texttt{uint64} columns) or
 a hash-then-perfect-table approach, neither of which we have yet
 prototyped.
 
-\paragraph{Tile-edge MultiPolygons.} Fields straddling our $5000^2$
+\paragraph{Tile-edge MultiPolygons} Fields straddling our $5000^2$
 processing tiles emerge as separate polygons. The USDA reference
 emits MultiPolygons for a small fraction of such cases. A
 post-pass that union-finds polygons sharing tile edges and identical
 combine keys is in development.
 
-\paragraph{CONUS scope.} The pipeline does not currently include
+\paragraph{CONUS scope} The pipeline does not currently include
 Alaska or Hawaii, matching USDA's scope.
 
 %-----------------------------------------------------------------------
 \section{Reproducibility}
 \label{sec:reproducibility}
 
-The pipeline is released under the MIT licence on PyPI as
+The pipeline is released under the Apache-2.0 licence on PyPI as
 \texttt{csb} (\url{https://github.com/isaaccorley/crop-sequence-boundaries-v2}).
 The full CONUS run is reproducible from a fresh clone with three
 commands: \texttt{csb download 2018 2025}, \texttt{csb build-boundaries},
 and \texttt{csb run-all 2018 2025}. SLURM batch scripts for a 96-core
 HPC node and a 32-core spot instance are included under
-\texttt{data/sbatch/}. The 15.30\,M-polygon CONUS GeoParquet output and
+\texttt{examples/cluster/}. The 15.30\,M-polygon CONUS GeoParquet output and
 the 2.7\,GB PMTiles archive are distributed via Source Cooperative;
 the per-region parity sweep (\cref{tab:parity-summary,tab:parity-detail})
 and per-class confusion (\cref{tab:per-class}) are reproducible from
@@ -934,7 +944,7 @@ the spatial extension, \textsc{contourrs}~0.7, and \textsc{tippecanoe}~2.61.
 
 We have rebuilt the USDA Crop Sequence Boundaries pipeline in pure open
 source, achieving a $287\times$ wall-clock and $860\times$ per-core
-reduction against the published ArcGIS reference at mean IoU 0.846
+reduction relative to the published USDA ArcPy runtime envelope at mean IoU 0.846
 across 16 diverse CONUS tiles. The dominant algorithmic levers are
 \texttt{uint64} bit-packing of the multi-year combine and a raster-side
 reformulation of \textsc{Eliminate(LENGTH)} as a label-graph union-find,
@@ -944,6 +954,33 @@ Hunt et al.~\cite{hunt2024csb}. The pipeline runs on a single 32-core node at
 produces outputs with USDA-identical schema. Source code is available
 on PyPI; the CONUS dataset and PMTiles archive are distributed via
 Source Cooperative.
+
+\section*{Data and Code Availability}
+
+Source code is available at
+\url{https://github.com/isaaccorley/crop-sequence-boundaries-v2} under the
+Apache-2.0 licence. Generated GeoParquet and PMTiles artifacts are
+distributed through Source Cooperative and linked from the project release
+notes. The parity and per-class evaluation commands are included in the
+repository.
+
+\section*{Declaration of Competing Interest}
+
+The author declares no competing financial interests or personal
+relationships that could have appeared to influence the work reported in
+this paper.
+
+\section*{Funding}
+
+This research did not receive any specific grant from funding agencies in
+the public, commercial, or not-for-profit sectors.
+
+\section*{Declaration of Generative AI and AI-Assisted Technologies in the Manuscript Preparation Process}
+
+During preparation of this work the author used OpenAI Codex to assist
+with proofreading, LaTeX editing, and consistency checks. The author
+reviewed and edited the content as needed and takes full responsibility
+for the content of the published article.
 
 \bibliographystyle{elsarticle-num}
 \bibliography{csb}

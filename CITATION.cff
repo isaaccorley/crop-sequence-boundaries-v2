@@ -24,9 +24,9 @@ keywords:
   - remote-sensing
 preferred-citation:
   type: article
-  title: "An Open-Source Crop Sequence Boundaries Pipeline at 287x the Speed of USDA's ArcGIS Reference Implementation"
+  title: "An Open-Source Pipeline for Cloud-Native Crop Sequence Boundaries"
   authors:
     - family-names: Corley
       given-names: Isaac
   year: 2026
-  url: "https://github.com/isaaccorley/crop-sequence-boundaries-v2/blob/main/paper/csb_icml2026.tex"
+  url: "https://github.com/isaaccorley/crop-sequence-boundaries-v2/blob/main/paper/csb_cea.tex"

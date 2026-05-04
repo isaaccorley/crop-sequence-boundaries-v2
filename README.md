@@ -13,7 +13,7 @@ official ArcPy CSB pipeline at
 - **USDA-identical output schema** (`CSBID`, `CSBYEARS`, `CSBACRES`,
     `CDL{year}`, `STATEFIPS`, `STATEASD`, `ASD`, `CNTY`, `CNTYFIPS`,
     `INSIDE_X/Y`, `Shape_Length`, `Shape_area`).
-- **Mean IoU 0.843, median 0.895** vs USDA ground truth across 16
+- **Mean IoU 0.846, median 0.897** vs USDA ground truth across 16
     geospatially diverse test tiles; acreage match within 2% in median.
 
 ## Install
@@ -130,9 +130,9 @@ Wisconsin dairy belt, Delmarva, …):
 
 | metric                    | mean  | median | min   | max   |
 | ------------------------- | ----- | ------ | ----- | ----- |
-| IoU                       | 0.843 | 0.895  | 0.527 | 0.934 |
-| polygon ratio (ours/USDA) | 1.02  | 0.91   | 0.47  | 1.57  |
-| acres ratio               | 0.95  | 0.98   | 0.68  | 1.01  |
+| IoU                       | 0.846 | 0.897  | 0.543 | 0.938 |
+| polygon ratio (ours/USDA) | 1.03  | 0.92   | 0.49  | 1.59  |
+| acres ratio               | 0.94  | 0.97   | 0.70  | 1.01  |
 
 To reproduce:
 
