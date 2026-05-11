@@ -26,7 +26,7 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v7.4
+        uses: astral-sh/setup-uv@v7.6
         with:
           enable-cache: true
           # Cache key includes pyproject.toml + uv.lock so a refreshed lock
